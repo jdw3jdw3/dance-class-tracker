@@ -19,9 +19,11 @@ create table if not exists public.classes (
   title text not null,
   class_date date not null,
   start_time time not null,
+  end_time time not null,
   recurring boolean not null default false,
   taught boolean not null default false,
   paid boolean not null default false,
+  earn_per_class_cents integer not null default 0 check (earn_per_class_cents >= 0),
   created_at timestamptz not null default now()
 );
 
@@ -54,3 +56,82 @@ create policy "classes_delete_own" on public.classes for delete using (auth.uid(
 -- If `gyms` already existed from an older run, `CREATE TABLE IF NOT EXISTS` skipped this column.
 alter table public.gyms
   add column if not exists pay_per_class_cents integer not null default 0;
+
+-- If `classes` existed without recurring flag.
+alter table public.classes
+  add column if not exists recurring boolean not null default false;
+
+-- Legacy `class_name` → app column `title` (see 007 for standalone script).
+do $mig$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'classes'
+      and column_name = 'class_name'
+  ) then
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'classes'
+        and column_name = 'title'
+    ) then
+      update public.classes
+      set title = coalesce(nullif(trim(title), ''), class_name, 'Class');
+      alter table public.classes drop column class_name;
+    else
+      alter table public.classes rename column class_name to title;
+    end if;
+  end if;
+end
+$mig$;
+
+-- If `classes` existed without title (class name in the app).
+alter table public.classes add column if not exists title text;
+
+update public.classes set title = 'Class' where title is null;
+
+alter table public.classes alter column title set default 'Class';
+alter table public.classes alter column title set not null;
+
+-- If `classes` existed without earn snapshot, add and backfill from the gym’s current rate.
+alter table public.classes add column if not exists earn_per_class_cents integer;
+
+update public.classes c
+set earn_per_class_cents = g.pay_per_class_cents
+from public.gyms g
+where c.gym_id = g.id
+  and c.earn_per_class_cents is null;
+
+update public.classes set earn_per_class_cents = 0 where earn_per_class_cents is null;
+
+alter table public.classes alter column earn_per_class_cents set default 0;
+alter table public.classes alter column earn_per_class_cents set not null;
+
+alter table public.classes
+  drop constraint if exists classes_earn_per_class_cents_check;
+
+alter table public.classes
+  add constraint classes_earn_per_class_cents_check check (earn_per_class_cents >= 0);
+
+-- End time (existing rows: start + 1 hour, late starts capped so end > start).
+alter table public.classes add column if not exists end_time time;
+
+update public.classes
+set end_time = (
+  case
+    when start_time >= time '23:00:00' then time '23:59:59'
+    else (start_time + interval '1 hour')::time
+  end
+)
+where end_time is null;
+
+alter table public.classes alter column end_time set not null;
+
+alter table public.classes
+  drop constraint if exists classes_end_after_start_check;
+
+alter table public.classes
+  add constraint classes_end_after_start_check check (end_time > start_time);
