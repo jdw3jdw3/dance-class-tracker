@@ -147,12 +147,14 @@ function ClassDetailDialog({
   saveBusy,
   onClose,
   onMarkTaught,
+  onEdit,
   onAskDelete,
 }: {
   cls: WeekAheadClassInput;
   saveBusy: boolean;
   onClose: () => void;
   onMarkTaught: () => void;
+  onEdit?: () => void;
   onAskDelete: () => void;
 }) {
   const gymName = cls.gyms?.name ?? "Gym";
@@ -228,6 +230,17 @@ function ClassDetailDialog({
         </dl>
 
         <div className="mt-5 flex flex-col gap-2">
+          {onEdit ? (
+            <button
+              type="button"
+              disabled={saveBusy}
+              onClick={onEdit}
+              className="w-full rounded-2xl border border-zinc-200/90 bg-zinc-50 py-3 text-[14px] font-semibold text-zinc-900 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700/80"
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              Edit class
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={saveBusy}
@@ -271,12 +284,14 @@ export function WeekAheadChart({
   todayStr,
   saveBusy = false,
   onMarkTaught,
+  onEditClass,
   onAskDelete,
 }: {
   classes: WeekAheadClassInput[];
   todayStr: string;
   saveBusy?: boolean;
   onMarkTaught?: (id: string) => void;
+  onEditClass?: (cls: WeekAheadClassInput) => void;
   onAskDelete?: (cls: WeekAheadClassInput) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -303,7 +318,7 @@ export function WeekAheadChart({
           ))}
         </div>
         <p className="mt-3 text-[11px] text-zinc-500 dark:text-zinc-400">
-          Tap a block for full class details. Faded blocks are already taught.
+          Tap a block for details or to edit. Faded blocks are already taught.
         </p>
       </section>
 
@@ -313,6 +328,14 @@ export function WeekAheadChart({
           saveBusy={saveBusy}
           onClose={() => setSelectedId(null)}
           onMarkTaught={() => onMarkTaught?.(selected.id)}
+          onEdit={
+            onEditClass
+              ? () => {
+                  setSelectedId(null);
+                  onEditClass(selected);
+                }
+              : undefined
+          }
           onAskDelete={() => {
             setSelectedId(null);
             onAskDelete?.(selected);

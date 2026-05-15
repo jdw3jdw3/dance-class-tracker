@@ -4,9 +4,20 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
+import {
+  ClassEditDialog,
+  type ClassEditSaveValues,
+} from "@/components/class-edit-dialog";
 import { GymBadge } from "@/components/gym-badge";
 import { PaymentsChartsSection } from "@/components/payments-charts";
 import { WeekAheadChart } from "@/components/week-ahead-chart";
+import {
+  buildRecurringCreatesFromAnchor,
+  collectRecurringSeriesIdsAtOrAfter,
+  planMissingRecurringInstances,
+  RECURRING_INSERT_CHUNK,
+} from "@/lib/recurring-classes";
+import { scheduleConflictWarning } from "@/lib/schedule-conflict";
 import { createClient } from "@/lib/supabase";
 import { computePaymentAnalytics } from "@/lib/payments-analytics";
 import { getSupabasePublicEnvDiagnostics } from "@/lib/supabase/env";
@@ -35,11 +46,6 @@ const GYM_COLOUR_OPTIONS = [
   { value: "fuchsia", label: "Fuchsia" },
 ] as const;
 
-/** Warn when a new class’s [start, end) is within this many minutes of another’s (same calendar day). */
-const MIN_SCHEDULE_GAP_MIN = 20;
-/** If an old row ever lacked `end_time`, treat duration as this many minutes for overlap checks only. */
-const LEGACY_DEFAULT_CLASS_MIN = 60;
-
 function parseClockToMinutes(t: string): number | null {
   const raw = t.includes("T")
     ? (t.split("T")[1]?.split(/[.+Zz]/)[0] ?? t)
@@ -49,35 +55,6 @@ function parseClockToMinutes(t: string): number | null {
   const m = parseInt(mStr ?? "", 10);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
-}
-
-function classIntervalFromRow(c: {
-  start_time: string;
-  end_time?: string | null;
-}): { start: number; end: number } | null {
-  const start = parseClockToMinutes(c.start_time);
-  if (start === null) return null;
-  const endRaw = c.end_time != null ? parseClockToMinutes(c.end_time) : null;
-  if (endRaw != null && endRaw > start) return { start, end: endRaw };
-  if (endRaw != null && endRaw <= start) return null;
-  return { start, end: start + LEGACY_DEFAULT_CLASS_MIN };
-}
-
-/** True if intervals [aStart,aEnd) and [bStart,bEnd) overlap, touch, or are separated by less than `minGap` minutes. */
-function classIntervalsTooClose(
-  aStart: number,
-  aEnd: number,
-  bStart: number,
-  bEnd: number,
-  minGap: number,
-): boolean {
-  if (aStart < bEnd && aEnd > bStart) return true;
-  if (aEnd <= bStart) {
-    const gap = bStart - aEnd;
-    return gap >= 0 && gap < minGap;
-  }
-  const gap = aStart - bEnd;
-  return gap >= 0 && gap < minGap;
 }
 
 function swatchClassForColour(colour: string) {
@@ -148,25 +125,6 @@ type ClassRow = {
 
 type ClassWithGym = ClassRow & { gyms: GymRow | null };
 
-/** Same gym + name + recurring, scheduled on or after `anchor` (date then start_time). */
-function collectRecurringSeriesIdsAtOrAfter(
-  anchor: ClassWithGym,
-  all: ClassWithGym[],
-): string[] {
-  if (!anchor.recurring) return [anchor.id];
-  const titleNorm = anchor.title.trim();
-  const { gym_id } = anchor;
-  return all
-    .filter((c) => {
-      if (!c.recurring || c.gym_id !== gym_id || c.title.trim() !== titleNorm)
-        return false;
-      if (c.class_date > anchor.class_date) return true;
-      if (c.class_date < anchor.class_date) return false;
-      return c.start_time >= anchor.start_time;
-    })
-    .map((c) => c.id);
-}
-
 type TabId = "today" | "calendar" | "payments" | "settings";
 
 function formatGbp(cents: number) {
@@ -174,6 +132,16 @@ function formatGbp(cents: number) {
     style: "currency",
     currency: "GBP",
   }).format(cents / 100);
+}
+
+function parsePayPoundsToCents(poundsStr: string): number | null {
+  const pounds = parseFloat(poundsStr.trim());
+  if (Number.isNaN(pounds) || pounds < 0) return null;
+  return Math.round(pounds * 100);
+}
+
+function centsToPoundsInput(cents: number) {
+  return String(cents / 100);
 }
 
 /** Local calendar date YYYY-MM-DD */
@@ -199,6 +167,14 @@ function formatTimeFromDb(t: string) {
 
 function formatTimeRangeFromDb(start: string, end: string) {
   return `${formatTimeFromDb(start)} – ${formatTimeFromDb(end)}`;
+}
+
+/** Postgres `time` → `HH:mm` for `<input type="time">`. */
+function timeFromDbForInput(t: string) {
+  const part = t.includes("T") ? (t.split("T")[1] ?? t) : t;
+  const [hh, mm] = part.split(":").map((x) => parseInt(x, 10));
+  if (Number.isNaN(hh)) return "18:30";
+  return `${String(hh).padStart(2, "0")}:${String(mm ?? 0).padStart(2, "0")}`;
 }
 
 function formatClassDateHeading(dateStr: string, todayStr: string) {
@@ -344,6 +320,7 @@ function ClassRowCalendar({
   timeRangeLabel,
   recurring,
   taught,
+  onOpen,
   onMarkTaught,
   onAskDelete,
   saveBusy,
@@ -354,13 +331,20 @@ function ClassRowCalendar({
   timeRangeLabel: string;
   recurring: boolean;
   taught: boolean;
+  onOpen: () => void;
   onMarkTaught: () => void;
   onAskDelete: () => void;
   saveBusy: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2.5 border-b border-zinc-100 py-3 last:border-b-0 dark:border-zinc-800/80 sm:flex-row sm:items-start sm:justify-between">
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="-mx-1 min-w-0 flex-1 rounded-xl px-1 py-0.5 text-left transition hover:bg-zinc-100/80 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800/70"
+        style={{ WebkitTapHighlightColor: "transparent" }}
+      >
+      <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <p
             className={`truncate text-[15px] font-medium text-zinc-900 dark:text-zinc-100 ${
@@ -386,7 +370,11 @@ function ClassRowCalendar({
         <p className="mt-1.5 text-[14px] font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
           {timeRangeLabel}
         </p>
+        <p className="mt-0.5 text-[12px] font-medium text-blue-600 dark:text-blue-400">
+          Tap to edit
+        </p>
       </div>
+      </button>
       <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-stretch">
         <button
           type="button"
@@ -744,6 +732,8 @@ export default function Home() {
   const [dataBanner, setDataBanner] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ClassWithGym | null>(null);
+  const [calendarEditClass, setCalendarEditClass] =
+    useState<ClassWithGym | null>(null);
 
   const [newGymName, setNewGymName] = useState("");
   const [newGymColour, setNewGymColour] = useState<string>(
@@ -764,6 +754,16 @@ export default function Home() {
   const [newClassTime, setNewClassTime] = useState("18:30");
   const [newClassEndTime, setNewClassEndTime] = useState("19:30");
   const [newClassRecurring, setNewClassRecurring] = useState(false);
+  const [newClassPay, setNewClassPay] = useState("");
+
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  const [editClassGymId, setEditClassGymId] = useState("");
+  const [editClassTitle, setEditClassTitle] = useState("");
+  const [editClassDate, setEditClassDate] = useState("");
+  const [editClassTime, setEditClassTime] = useState("18:30");
+  const [editClassEndTime, setEditClassEndTime] = useState("19:30");
+  const [editClassRecurring, setEditClassRecurring] = useState(false);
+  const [editClassPay, setEditClassPay] = useState("");
 
   const userId = session?.user.id ?? "";
 
@@ -785,47 +785,53 @@ export default function Home() {
     [classes, todayStr],
   );
 
-  const newClassScheduleWarning = useMemo(() => {
-    const newStart = parseClockToMinutes(newClassTime);
-    const newEnd = parseClockToMinutes(newClassEndTime);
-    if (
-      newStart === null ||
-      newEnd === null ||
-      newEnd <= newStart
-    ) {
-      return null;
-    }
-    const sameDay = classes.filter((c) => c.class_date === newClassDate);
-    const hits: ClassWithGym[] = [];
-    for (const c of sameDay) {
-      const ex = classIntervalFromRow(c);
-      if (!ex) continue;
-      if (
-        classIntervalsTooClose(
-          newStart,
-          newEnd,
-          ex.start,
-          ex.end,
-          MIN_SCHEDULE_GAP_MIN,
-        )
-      ) {
-        hits.push(c);
-      }
-    }
-    if (hits.length === 0) return null;
-    const bits = hits.map(
-      (c) =>
-        `${c.title} (${formatTimeRangeFromDb(c.start_time, c.end_time)})${
-          c.gyms?.name ? ` — ${c.gyms.name}` : ""
-        }`,
-    );
-    return `This slot is within ${MIN_SCHEDULE_GAP_MIN} minutes of another class on that day: ${bits.join("; ")}. You can still save if you meant to.`;
-  }, [classes, newClassDate, newClassTime, newClassEndTime]);
+  const newClassScheduleWarning = useMemo(
+    () =>
+      scheduleConflictWarning(
+        classes,
+        newClassDate,
+        newClassTime,
+        newClassEndTime,
+      ),
+    [classes, newClassDate, newClassTime, newClassEndTime],
+  );
+
+  const editClassScheduleWarning = useMemo(
+    () =>
+      editingClassId
+        ? scheduleConflictWarning(
+            classes,
+            editClassDate,
+            editClassTime,
+            editClassEndTime,
+            editingClassId,
+          )
+        : null,
+    [
+      classes,
+      editingClassId,
+      editClassDate,
+      editClassTime,
+      editClassEndTime,
+    ],
+  );
+
+  const futureEditableClasses = useMemo(
+    () =>
+      [...classes]
+        .filter((c) => c.class_date >= todayStr)
+        .sort(
+          (a, b) =>
+            a.class_date.localeCompare(b.class_date) ||
+            a.start_time.localeCompare(b.start_time),
+        ),
+    [classes, todayStr],
+  );
 
   const calendarGroups = useMemo(() => {
     const sorted = [...classes].sort(
       (a, b) =>
-        b.class_date.localeCompare(a.class_date) ||
+        a.class_date.localeCompare(b.class_date) ||
         a.start_time.localeCompare(b.start_time),
     );
     const map = new Map<string, ClassWithGym[]>();
@@ -858,10 +864,14 @@ export default function Home() {
         classTitle: c.title,
         gymName: c.gyms!.name,
         gymColour: c.gyms!.colour,
-        taughtOn: new Date(`${c.class_date}T12:00:00`).toLocaleDateString(
-          "en-US",
-          { month: "short", day: "numeric" },
-        ),
+        taughtOn: (() => {
+          const [y, m, d] = c.class_date.split("-").map(Number);
+          return new Date(y, m - 1, d).toLocaleDateString("en-GB", {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+          });
+        })(),
         amountCents:
           c.earn_per_class_cents ??
           c.gyms?.pay_per_class_cents ??
@@ -892,6 +902,11 @@ export default function Home() {
     [gyms, newClassGymId],
   );
 
+  const editClassSelectedGym = useMemo(
+    () => gyms.find((g) => g.id === editClassGymId),
+    [gyms, editClassGymId],
+  );
+
   const loadData = useCallback(async () => {
     if (!supabase) return;
     setDataError(null);
@@ -907,7 +922,32 @@ export default function Home() {
       if (gRes.error) throw gRes.error;
       if (cRes.error) throw cRes.error;
       setGyms((gRes.data as GymRow[]) ?? []);
-      setClasses((cRes.data as ClassWithGym[]) ?? []);
+
+      let loaded = (cRes.data as ClassWithGym[]) ?? [];
+      const uid = session?.user.id;
+      if (uid) {
+        const missing = planMissingRecurringInstances(
+          loaded,
+          uid,
+          toLocalISODate(new Date()),
+        );
+        if (missing.length > 0) {
+          for (let i = 0; i < missing.length; i += RECURRING_INSERT_CHUNK) {
+            const slice = missing.slice(i, i + RECURRING_INSERT_CHUNK);
+            const { error: insErr } = await supabase
+              .from("classes")
+              .insert(slice);
+            if (insErr) throw insErr;
+          }
+          const { data: refreshed, error: refErr } = await supabase
+            .from("classes")
+            .select("*, gyms(*)")
+            .order("class_date", { ascending: true });
+          if (refErr) throw refErr;
+          loaded = (refreshed as ClassWithGym[]) ?? [];
+        }
+      }
+      setClasses(loaded);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Could not load data.";
       setDataError(
@@ -922,7 +962,7 @@ export default function Home() {
     } finally {
       setDataLoading(false);
     }
-  }, [supabase]);
+  }, [supabase, session]);
 
   useEffect(() => {
     if (!session || !supabase) return;
@@ -934,28 +974,50 @@ export default function Home() {
   useEffect(() => {
     if (gyms.length === 0) return;
     queueMicrotask(() => {
-      setNewClassGymId((prev) =>
-        prev && gyms.some((g) => g.id === prev) ? prev : gyms[0].id,
-      );
+      setNewClassGymId((prev) => {
+        const nextId =
+          prev && gyms.some((g) => g.id === prev) ? prev : gyms[0].id;
+        const g = gyms.find((x) => x.id === nextId);
+        if (g) setNewClassPay(centsToPoundsInput(g.pay_per_class_cents));
+        return nextId;
+      });
     });
   }, [gyms]);
 
   useEffect(() => {
     if (tab !== "settings") {
-      queueMicrotask(() => setEditingGymId(null));
+      queueMicrotask(() => {
+        setEditingGymId(null);
+        setEditingClassId(null);
+      });
+    }
+    if (tab !== "calendar") {
+      queueMicrotask(() => setCalendarEditClass(null));
     }
   }, [tab]);
+
+  function beginEditClass(c: ClassWithGym) {
+    setEditingClassId(c.id);
+    setEditClassGymId(c.gym_id);
+    setEditClassTitle(c.title);
+    setEditClassDate(c.class_date);
+    setEditClassTime(timeFromDbForInput(c.start_time));
+    setEditClassEndTime(timeFromDbForInput(c.end_time));
+    setEditClassRecurring(c.recurring);
+    setEditClassPay(centsToPoundsInput(c.earn_per_class_cents));
+    setDataBanner(null);
+  }
 
   const headerSubtitle = useMemo(() => {
     switch (tab) {
       case "today":
         return dateLine;
       case "calendar":
-        return "Past and upcoming classes — mark as taught";
+        return "Tap a class to edit — mark as taught below";
       case "payments":
         return "Income, charts, and outstanding pay";
       case "settings":
-        return "Add classes and manage gyms";
+        return "Add and edit upcoming classes, manage gyms";
       default:
         return "";
     }
@@ -1098,27 +1160,139 @@ export default function Home() {
       setDataBanner("End time must be after start time.");
       return;
     }
+    const earnCents = parsePayPoundsToCents(newClassPay);
+    if (earnCents === null) {
+      setDataBanner("Enter a valid pay amount for this class.");
+      return;
+    }
     setSaveBusy(true);
     setDataBanner(null);
-    const earnCents =
-      gyms.find((g) => g.id === newClassGymId)?.pay_per_class_cents ?? 0;
-    const { error } = await supabase.from("classes").insert({
+    const template = {
       user_id: userId,
       gym_id: newClassGymId,
       title: newClassTitle.trim(),
-      class_date: newClassDate,
       start_time: startSql,
       end_time: endSql,
-      recurring: newClassRecurring,
       earn_per_class_cents: earnCents,
-    });
-    if (error) setDataBanner(error.message);
-    else {
+    };
+
+    if (newClassRecurring) {
+      const rows = buildRecurringCreatesFromAnchor(
+        template,
+        newClassDate,
+        todayStr,
+      );
+      for (let i = 0; i < rows.length; i += RECURRING_INSERT_CHUNK) {
+        const slice = rows.slice(i, i + RECURRING_INSERT_CHUNK);
+        const { error } = await supabase.from("classes").insert(slice);
+        if (error) {
+          setDataBanner(error.message);
+          setSaveBusy(false);
+          return;
+        }
+      }
       setNewClassTitle("");
       setNewClassRecurring(false);
+    } else {
+      const { error } = await supabase.from("classes").insert({
+        ...template,
+        class_date: newClassDate,
+        recurring: false,
+        taught: false,
+        paid: false,
+      });
+      if (error) setDataBanner(error.message);
+      else {
+        setNewClassTitle("");
+        setNewClassRecurring(false);
+      }
     }
     await loadData();
     setSaveBusy(false);
+  }
+
+  async function saveClassEdit(
+    classId: string,
+    values: ClassEditSaveValues,
+    options?: { allowPastDates?: boolean; onSuccess?: () => void },
+  ) {
+    if (!supabase) return false;
+    if (!values.gymId) {
+      setDataBanner("Pick a gym for this class.");
+      return false;
+    }
+    if (!values.title.trim()) {
+      setDataBanner("Enter a class name.");
+      return false;
+    }
+    const startSql =
+      values.startTime.length === 5
+        ? `${values.startTime}:00`
+        : values.startTime;
+    const endSql =
+      values.endTime.length === 5 ? `${values.endTime}:00` : values.endTime;
+    const startM = parseClockToMinutes(values.startTime);
+    const endM = parseClockToMinutes(values.endTime);
+    if (startM === null || endM === null) {
+      setDataBanner("Enter valid start and end times.");
+      return false;
+    }
+    if (endM <= startM) {
+      setDataBanner("End time must be after start time.");
+      return false;
+    }
+    if (!options?.allowPastDates && values.classDate < todayStr) {
+      setDataBanner("Only today and future classes can be edited here.");
+      return false;
+    }
+    const earnCents = parsePayPoundsToCents(values.payPounds);
+    if (earnCents === null) {
+      setDataBanner("Enter a valid pay amount for this class.");
+      return false;
+    }
+    setSaveBusy(true);
+    setDataBanner(null);
+    const { error } = await supabase
+      .from("classes")
+      .update({
+        gym_id: values.gymId,
+        title: values.title.trim(),
+        class_date: values.classDate,
+        start_time: startSql,
+        end_time: endSql,
+        recurring: values.recurring,
+        earn_per_class_cents: earnCents,
+      })
+      .eq("id", classId);
+    if (error) {
+      setDataBanner(error.message);
+      setSaveBusy(false);
+      return false;
+    }
+    options?.onSuccess?.();
+    await loadData();
+    setSaveBusy(false);
+    return true;
+  }
+
+  async function handleUpdateClass(
+    e: FormEvent<HTMLFormElement>,
+    classId: string,
+  ) {
+    e.preventDefault();
+    await saveClassEdit(
+      classId,
+      {
+        gymId: editClassGymId,
+        title: editClassTitle,
+        classDate: editClassDate,
+        startTime: editClassTime,
+        endTime: editClassEndTime,
+        recurring: editClassRecurring,
+        payPounds: editClassPay,
+      },
+      { allowPastDates: false, onSuccess: () => setEditingClassId(null) },
+    );
   }
 
   function classesThisMonthForGym(gymId: string) {
@@ -1352,13 +1526,17 @@ export default function Home() {
 
             <SectionCard
               title="Week ahead"
-              subtitle="Today through the next 6 days — 6:30 AM to 10:00 PM"
+              subtitle="Yesterday, today, and the next 7 days — 6:30 AM to 10:00 PM"
             >
               <WeekAheadChart
                 classes={classes}
                 todayStr={todayStr}
                 saveBusy={saveBusy}
                 onMarkTaught={(id) => void toggleTaught(id)}
+                onEditClass={(c) => {
+                  const row = classes.find((x) => x.id === c.id);
+                  if (row) setCalendarEditClass(row);
+                }}
                 onAskDelete={(c) => {
                   const row = classes.find((x) => x.id === c.id);
                   if (row) setDeleteTarget(row);
@@ -1398,6 +1576,7 @@ export default function Home() {
                         )}
                         recurring={c.recurring}
                         taught={c.taught}
+                        onOpen={() => setCalendarEditClass(c)}
                         onMarkTaught={() => void toggleTaught(c.id)}
                         onAskDelete={() => setDeleteTarget(c)}
                         saveBusy={saveBusy}
@@ -1430,7 +1609,7 @@ export default function Home() {
 
             <SectionCard
               title="Taught, not paid"
-              subtitle="Amount uses the rate stored on each class when it was added. Changing a gym’s pay only affects new classes."
+              subtitle="Each class uses its own pay amount (set when added or edited). Changing a gym’s default does not change existing classes."
             >
               {unpaid.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-10 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
@@ -1499,7 +1678,7 @@ export default function Home() {
           <div className="flex flex-col gap-4">
             <SectionCard
               title="Add a class"
-              subtitle="Pick gym, date, start and end time. Recurring is saved as a flag for your records."
+              subtitle="Recurring classes are added every week on the calendar for the next year."
             >
               <form onSubmit={handleCreateClass} className="flex flex-col gap-3">
                 <div>
@@ -1509,7 +1688,15 @@ export default function Home() {
                   <div className="flex items-stretch gap-3">
                     <select
                       value={newClassGymId}
-                      onChange={(e) => setNewClassGymId(e.target.value)}
+                      onChange={(e) => {
+                        const gymId = e.target.value;
+                        setNewClassGymId(gymId);
+                        const g = gyms.find((x) => x.id === gymId);
+                        if (g)
+                          setNewClassPay(
+                            centsToPoundsInput(g.pay_per_class_cents),
+                          );
+                      }}
                       className="min-w-0 flex-1 rounded-2xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-[15px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
                       disabled={gyms.length === 0}
                     >
@@ -1548,6 +1735,28 @@ export default function Home() {
                     className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
                     placeholder="e.g. Intermediate Hip Hop"
                   />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                    Pay for this class (£)
+                  </label>
+                  <input
+                    inputMode="decimal"
+                    value={newClassPay}
+                    onChange={(e) => setNewClassPay(e.target.value)}
+                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                    placeholder={
+                      addClassSelectedGym
+                        ? `Gym default: ${centsToPoundsInput(addClassSelectedGym.pay_per_class_cents)}`
+                        : "e.g. 20 or 21.50"
+                    }
+                  />
+                  {addClassSelectedGym ? (
+                    <p className="mt-1 text-[12px] text-zinc-500 dark:text-zinc-400">
+                      Gym default is{" "}
+                      {formatGbp(addClassSelectedGym.pay_per_class_cents)}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
@@ -1591,7 +1800,7 @@ export default function Home() {
                     onChange={(e) => setNewClassRecurring(e.target.checked)}
                     className="h-4 w-4 rounded border-zinc-300"
                   />
-                  Recurring class
+                  Recurring weekly (adds to calendar every week)
                 </label>
                 {newClassScheduleWarning ? (
                   <p
@@ -1609,6 +1818,253 @@ export default function Home() {
                   {saveBusy ? "Saving…" : "Save class"}
                 </button>
               </form>
+            </SectionCard>
+
+            <SectionCard
+              title="Upcoming classes"
+              subtitle="Today and future classes — edit pay per class if it differs from the gym default."
+            >
+              {futureEditableClasses.length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-8 text-center text-[14px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-400">
+                  No upcoming classes scheduled.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {futureEditableClasses.map((c) => {
+                    const editing = editingClassId === c.id;
+                    const { heading, sub: dateSub } = formatClassDateHeading(
+                      c.class_date,
+                      todayStr,
+                    );
+                    return (
+                      <li
+                        key={c.id}
+                        className="rounded-2xl border border-zinc-200/70 bg-zinc-50/80 p-3.5 dark:border-zinc-700/60 dark:bg-zinc-800/40"
+                      >
+                        {editing ? (
+                          <form
+                            onSubmit={(e) => void handleUpdateClass(e, c.id)}
+                            className="flex flex-col gap-3"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
+                                Edit class
+                              </p>
+                              <button
+                                type="button"
+                                disabled={saveBusy}
+                                onClick={() => setEditingClassId(null)}
+                                className="shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                Gym
+                              </label>
+                              <div className="flex items-stretch gap-3">
+                                <select
+                                  value={editClassGymId}
+                                  onChange={(e) => {
+                                    const gymId = e.target.value;
+                                    setEditClassGymId(gymId);
+                                    const g = gyms.find((x) => x.id === gymId);
+                                    if (g)
+                                      setEditClassPay(
+                                        centsToPoundsInput(
+                                          g.pay_per_class_cents,
+                                        ),
+                                      );
+                                  }}
+                                  className="min-w-0 flex-1 rounded-2xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-[15px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                                >
+                                  {gyms.map((g) => (
+                                    <option key={g.id} value={g.id}>
+                                      {g.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <div
+                                  className={`h-12 w-12 shrink-0 rounded-2xl shadow-inner ${swatchClassForColour(
+                                    editClassSelectedGym?.colour ?? "violet",
+                                  )}`}
+                                  aria-hidden
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                Class name
+                              </label>
+                              <input
+                                value={editClassTitle}
+                                onChange={(e) =>
+                                  setEditClassTitle(e.target.value)
+                                }
+                                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                Pay for this class (£)
+                              </label>
+                              <input
+                                inputMode="decimal"
+                                value={editClassPay}
+                                onChange={(e) =>
+                                  setEditClassPay(e.target.value)
+                                }
+                                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                                placeholder="e.g. 20 or 21.50"
+                              />
+                              {editClassSelectedGym ? (
+                                <p className="mt-1 text-[12px] text-zinc-500 dark:text-zinc-400">
+                                  Gym default is{" "}
+                                  {formatGbp(
+                                    editClassSelectedGym.pay_per_class_cents,
+                                  )}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                Date
+                              </label>
+                              <input
+                                type="date"
+                                min={todayStr}
+                                value={editClassDate}
+                                onChange={(e) =>
+                                  setEditClassDate(e.target.value)
+                                }
+                                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-[15px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                  Start time
+                                </label>
+                                <input
+                                  type="time"
+                                  value={editClassTime}
+                                  onChange={(e) =>
+                                    setEditClassTime(e.target.value)
+                                  }
+                                  className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-[15px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                                  End time
+                                </label>
+                                <input
+                                  type="time"
+                                  value={editClassEndTime}
+                                  onChange={(e) =>
+                                    setEditClassEndTime(e.target.value)
+                                  }
+                                  className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-3 py-3 text-[15px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                                />
+                              </div>
+                            </div>
+                            <label className="flex items-center gap-2 text-[14px] text-zinc-700 dark:text-zinc-300">
+                              <input
+                                type="checkbox"
+                                checked={editClassRecurring}
+                                onChange={(e) =>
+                                  setEditClassRecurring(e.target.checked)
+                                }
+                                className="h-4 w-4 rounded border-zinc-300"
+                              />
+                              Recurring class
+                            </label>
+                            {editClassScheduleWarning ? (
+                              <p
+                                role="status"
+                                className="rounded-2xl border border-amber-500/35 bg-amber-50/90 px-3 py-2.5 text-[13px] leading-snug text-amber-950 dark:border-amber-400/25 dark:bg-amber-950/35 dark:text-amber-100"
+                              >
+                                {editClassScheduleWarning}
+                              </p>
+                            ) : null}
+                            <button
+                              type="submit"
+                              disabled={saveBusy}
+                              className="rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                            >
+                              {saveBusy ? "Saving…" : "Save changes"}
+                            </button>
+                          </form>
+                        ) : (
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
+                                {c.title}
+                              </p>
+                              <p className="mt-1 text-[13px] text-zinc-600 dark:text-zinc-400">
+                                {heading}
+                                <span className="text-zinc-400 dark:text-zinc-500">
+                                  {" "}
+                                  · {dateSub}
+                                </span>
+                              </p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <GymBadge
+                                  name={c.gyms?.name ?? "Gym"}
+                                  colour={c.gyms?.colour ?? "violet"}
+                                />
+                                {c.recurring ? (
+                                  <span className="text-[12px] font-medium text-blue-600 dark:text-blue-400">
+                                    Recurring
+                                  </span>
+                                ) : (
+                                  <span className="text-[12px] text-zinc-500 dark:text-zinc-400">
+                                    One-off
+                                  </span>
+                                )}
+                                {c.taught ? (
+                                  <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
+                                    Taught
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 text-[14px] font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
+                                {formatTimeRangeFromDb(
+                                  c.start_time,
+                                  c.end_time,
+                                )}
+                              </p>
+                              <p className="mt-1 text-[14px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                                {formatGbp(c.earn_per_class_cents)}
+                                {c.gyms &&
+                                c.earn_per_class_cents !==
+                                  c.gyms.pay_per_class_cents ? (
+                                  <span className="ml-1 text-[12px] font-medium text-zinc-500 dark:text-zinc-400">
+                                    (gym default{" "}
+                                    {formatGbp(c.gyms.pay_per_class_cents)})
+                                  </span>
+                                ) : null}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={saveBusy}
+                              onClick={() => beginEditClass(c)}
+                              className="shrink-0 self-start rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700/80"
+                              style={{
+                                WebkitTapHighlightColor: "transparent",
+                              }}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </SectionCard>
 
             <SectionCard
@@ -1784,6 +2240,28 @@ export default function Home() {
           </div>
         ) : null}
       </div>
+
+      {calendarEditClass ? (
+        <ClassEditDialog
+          key={calendarEditClass.id}
+          cls={calendarEditClass}
+          gyms={gyms}
+          allClasses={classes}
+          saveBusy={saveBusy}
+          onClose={() => setCalendarEditClass(null)}
+          onSave={(values) => {
+            void saveClassEdit(calendarEditClass.id, values, {
+              allowPastDates: true,
+              onSuccess: () => setCalendarEditClass(null),
+            });
+          }}
+          onToggleTaught={() => void toggleTaught(calendarEditClass.id)}
+          onDelete={() => {
+            setCalendarEditClass(null);
+            setDeleteTarget(calendarEditClass);
+          }}
+        />
+      ) : null}
 
       {deleteTarget ? (
         <div

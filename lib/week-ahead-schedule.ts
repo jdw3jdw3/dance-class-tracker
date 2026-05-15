@@ -69,10 +69,11 @@ function toLocalISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Yesterday, today, and the next 7 days (9 rows). */
 function weekAheadDateStrings(todayStr: string): string[] {
   const [y, m, d] = todayStr.split("-").map(Number);
   const out: string[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = -1; i <= 7; i++) {
     out.push(toLocalISODate(new Date(y, m - 1, d + i)));
   }
   return out;
@@ -90,10 +91,14 @@ function dayHeading(dateStr: string, todayStr: string): {
     day: "numeric",
   });
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const [ty, tm, td] = todayStr.split("-").map(Number);
+  const yesterdayStr = toLocalISODate(new Date(ty, tm - 1, td - 1));
+  const tomorrowStr = toLocalISODate(new Date(ty, tm - 1, td + 1));
+
   if (dateStr === todayStr) return { label: "Today", dateSub: weekdayShort };
-  if (dateStr === toLocalISODate(tomorrow))
+  if (dateStr === yesterdayStr)
+    return { label: "Yesterday", dateSub: weekdayShort };
+  if (dateStr === tomorrowStr)
     return { label: "Tomorrow", dateSub: weekdayShort };
   return { label: weekdayShort, dateSub };
 }
