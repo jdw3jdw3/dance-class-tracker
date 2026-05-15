@@ -13,24 +13,60 @@ const BTN_ELEVATION =
 const BTN_ELEVATION_STRONG =
   "shadow-[0_1px_3px_rgba(0,0,0,0.28),0_6px_20px_rgba(0,0,0,0.4)] ring-1 ring-black/20";
 
-export const classCardDeleteButtonClass = `rounded-2xl border border-rose-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 ${BTN_ELEVATION}`;
-
-export const classCardNeutralButtonClass = `rounded-2xl border border-zinc-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-900 hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50 ${BTN_ELEVATION}`;
-
-export function classCardTaughtButtonClass(taught: boolean) {
-  const base =
-    "rounded-2xl px-4 py-2.5 text-[14px] font-semibold transition active:scale-[0.98] sm:min-w-[9.5rem] disabled:opacity-60";
+export function classCardTaughtButtonClass(
+  taught: boolean,
+  opts?: { fullWidth?: boolean },
+) {
+  const size = opts?.fullWidth
+    ? "w-full py-3"
+    : "px-4 py-2.5 sm:min-w-[9.5rem]";
+  const base = `rounded-2xl text-[14px] font-semibold transition active:scale-[0.98] disabled:opacity-60 ${size}`;
   if (taught) {
     return `${base} border border-emerald-600/35 bg-white text-emerald-800 hover:bg-emerald-50 ${BTN_ELEVATION}`;
   }
   return `${base} bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 ${BTN_ELEVATION_STRONG}`;
 }
 
+export function classCardDeleteButtonClass(opts?: { fullWidth?: boolean }) {
+  const size = opts?.fullWidth ? "w-full py-3" : "px-4 py-2.5";
+  return `rounded-2xl border border-rose-200/90 bg-white text-[14px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 ${size} ${BTN_ELEVATION}`;
+}
+
+export function classCardNeutralButtonClass(opts?: { fullWidth?: boolean }) {
+  const size = opts?.fullWidth ? "w-full py-3" : "px-4 py-2.5 active:scale-[0.98]";
+  return `rounded-2xl border border-zinc-200/90 bg-white text-[14px] font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50 ${size} ${BTN_ELEVATION}`;
+}
+
+export const classCardEditButtonClass = `shrink-0 self-start rounded-full border border-zinc-200/90 bg-white px-3 py-1.5 text-[13px] font-semibold text-zinc-800 hover:bg-zinc-50 ${BTN_ELEVATION}`;
+
+export function classCardMutedTextClass(gymColour: string) {
+  return gymColourUsesLightForeground(gymColour)
+    ? "text-white/85"
+    : "text-amber-950/85";
+}
+
+export function classCardTaughtStatusClass(gymColour: string) {
+  return gymColourUsesLightForeground(gymColour)
+    ? "font-semibold text-emerald-100"
+    : "font-semibold text-emerald-900";
+}
+
+export function classCardRingClass(gymColour: string) {
+  return gymColourUsesLightForeground(gymColour)
+    ? "ring-white/25"
+    : "ring-amber-950/20";
+}
+
+/** White inset for forms / details on gym-coloured surfaces. */
+export const classCardInsetSurfaceClass =
+  "rounded-2xl bg-white/95 p-4 shadow-sm ring-1 ring-black/10 dark:bg-zinc-900/95";
+
 export function ClassSplitCard({
   title,
   gymName,
   gymColour,
   highlight,
+  meta,
   detail,
   titleStrikethrough = false,
   onInfoClick,
@@ -42,16 +78,20 @@ export function ClassSplitCard({
   gymColour: string;
   /** Large text at the bottom of the coloured panel (time, pay amount, etc.). */
   highlight?: string;
+  meta?: ReactNode;
   detail?: ReactNode;
   titleStrikethrough?: boolean;
   onInfoClick?: () => void;
   actions: ReactNode;
   className?: string;
 }) {
-  const lightFg = gymColourUsesLightForeground(gymColour);
-  const titleClass = lightFg ? "text-white" : "text-amber-950";
-  const highlightClass = lightFg ? "text-white" : "text-amber-950";
-  const ringClass = lightFg ? "ring-white/25" : "ring-amber-950/20";
+  const titleClass = gymColourUsesLightForeground(gymColour)
+    ? "text-white"
+    : "text-amber-950";
+  const highlightClass = gymColourUsesLightForeground(gymColour)
+    ? "text-white"
+    : "text-amber-950";
+  const ringClass = classCardRingClass(gymColour);
 
   const infoPanel = (
     <>
@@ -76,6 +116,13 @@ export function ClassSplitCard({
         >
           {highlight}
         </p>
+      ) : null}
+      {meta ? (
+        <div
+          className={`mt-1.5 text-[14px] font-semibold tabular-nums ${highlightClass}`}
+        >
+          {meta}
+        </div>
       ) : null}
     </>
   );

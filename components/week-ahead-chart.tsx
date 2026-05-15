@@ -2,8 +2,21 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  ClassSplitRecurringLabel,
+  classCardDeleteButtonClass,
+  classCardInsetSurfaceClass,
+  classCardMutedTextClass,
+  classCardNeutralButtonClass,
+  classCardRingClass,
+  classCardTaughtButtonClass,
+  classCardTaughtStatusClass,
+} from "@/components/class-split-card";
 import { GymBadge } from "@/components/gym-badge";
-import { gymColourHex } from "@/lib/gym-colours";
+import {
+  gymColourHex,
+  gymColourUsesLightForeground,
+} from "@/lib/gym-colours";
 import {
   computeWeekAheadSchedule,
   formatMinutesShort,
@@ -159,6 +172,8 @@ function ClassDetailDialog({
 }) {
   const gymName = cls.gyms?.name ?? "Gym";
   const gymColour = cls.gyms?.colour ?? "violet";
+  const lightFg = gymColourUsesLightForeground(gymColour);
+  const titleClass = lightFg ? "text-white" : "text-amber-950";
   const payCents =
     cls.earn_per_class_cents ?? cls.gyms?.pay_per_class_cents ?? 0;
 
@@ -174,110 +189,111 @@ function ClassDetailDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="week-class-detail-title"
-        className="w-full max-w-md rounded-[22px] border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        className={`w-full max-w-md overflow-hidden rounded-[22px] p-4 shadow-xl ring-1 ${classCardRingClass(gymColour)}`}
+        style={{ backgroundColor: gymColourHex(gymColour) }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2
           id="week-class-detail-title"
-          className="text-[17px] font-semibold text-zinc-900 dark:text-zinc-50"
+          className={`text-[17px] font-semibold ${titleClass}`}
         >
           {cls.title}
         </h2>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <GymBadge name={gymName} colour={gymColour} className="text-[12px] py-1" />
+          <GymBadge
+            name={gymName}
+            colour={gymColour}
+            variant="onColour"
+            className="text-[12px] py-1"
+          />
           {cls.recurring ? (
-            <span className="text-[12px] font-medium text-blue-600 dark:text-blue-400">
-              Recurring
-            </span>
+            <ClassSplitRecurringLabel lightForeground={lightFg} />
           ) : null}
           {cls.taught ? (
-            <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Taught
-            </span>
+            <span className={classCardTaughtStatusClass(gymColour)}>Taught</span>
           ) : null}
           {cls.taught && cls.paid ? (
-            <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Paid
-            </span>
+            <span className={classCardTaughtStatusClass(gymColour)}>Paid</span>
           ) : null}
           {cls.taught && !cls.paid ? (
-            <span className="text-[12px] font-semibold text-amber-700 dark:text-amber-300">
+            <span className={classCardMutedTextClass(gymColour)}>
               Awaiting pay
             </span>
           ) : null}
         </div>
 
-        <dl className="mt-4 flex flex-col gap-2.5 text-[14px]">
-          <div className="flex justify-between gap-4">
-            <dt className="text-zinc-500 dark:text-zinc-400">Date</dt>
-            <dd className="text-right font-medium text-zinc-900 dark:text-zinc-100">
-              {formatClassDate(cls.class_date)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-zinc-500 dark:text-zinc-400">Time</dt>
-            <dd className="text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-              {formatTimeRangeFromDb(cls.start_time, cls.end_time)}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-zinc-500 dark:text-zinc-400">Pay</dt>
-            <dd className="text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
-              {formatGbp(payCents)}
-            </dd>
-          </div>
-        </dl>
+        <div className={`mt-4 ${classCardInsetSurfaceClass}`}>
+          <dl className="flex flex-col gap-2.5 text-[14px]">
+            <div className="flex justify-between gap-4">
+              <dt className="text-zinc-500 dark:text-zinc-400">Date</dt>
+              <dd className="text-right font-medium text-zinc-900 dark:text-zinc-100">
+                {formatClassDate(cls.class_date)}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-zinc-500 dark:text-zinc-400">Time</dt>
+              <dd className="text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                {formatTimeRangeFromDb(cls.start_time, cls.end_time)}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-zinc-500 dark:text-zinc-400">Pay</dt>
+              <dd className="text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
+                {formatGbp(payCents)}
+              </dd>
+            </div>
+          </dl>
 
-        <div className="mt-5 flex flex-col gap-2">
-          {onEdit ? (
+          <div className="mt-5 flex flex-col gap-2">
+            {onEdit ? (
+              <button
+                type="button"
+                disabled={saveBusy}
+                onClick={onEdit}
+                className={classCardNeutralButtonClass({ fullWidth: true })}
+                style={{ WebkitTapHighlightColor: "transparent" }}
+              >
+                Edit class
+              </button>
+            ) : null}
             <button
               type="button"
               disabled={saveBusy}
-              onClick={onEdit}
-              className="w-full rounded-2xl border border-zinc-200/90 bg-zinc-50 py-3 text-[14px] font-semibold text-zinc-900 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700/80"
+              onClick={onMarkTaught}
+              aria-pressed={cls.taught}
+              className={classCardTaughtButtonClass(cls.taught, {
+                fullWidth: true,
+              })}
               style={{ WebkitTapHighlightColor: "transparent" }}
             >
-              Edit class
+              {cls.taught ? "Undo taught" : "Mark as taught"}
             </button>
-          ) : null}
-          <button
-            type="button"
-            disabled={saveBusy}
-            onClick={onMarkTaught}
-            aria-pressed={cls.taught}
-            className={`w-full rounded-2xl py-3 text-[14px] font-semibold shadow-sm disabled:opacity-50 ${
-              cls.taught
-                ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
-                : "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
-            }`}
-            style={{ WebkitTapHighlightColor: "transparent" }}
-          >
-            {cls.taught ? "Undo taught" : "Mark as taught"}
-          </button>
-          <button
-            type="button"
-            disabled={saveBusy}
-            onClick={onAskDelete}
-            className="w-full rounded-2xl border border-rose-200/90 py-3 text-[14px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-950/40"
-            style={{ WebkitTapHighlightColor: "transparent" }}
-          >
-            Delete class
-          </button>
-          <button
-            type="button"
-            disabled={saveBusy}
-            onClick={onClose}
-            className="w-full rounded-2xl py-3 text-[14px] font-semibold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800/80"
-            style={{ WebkitTapHighlightColor: "transparent" }}
-          >
-            Close
-          </button>
+            <button
+              type="button"
+              disabled={saveBusy}
+              onClick={onAskDelete}
+              className={classCardDeleteButtonClass({ fullWidth: true })}
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              Delete class
+            </button>
+            <button
+              type="button"
+              disabled={saveBusy}
+              onClick={onClose}
+              className={classCardNeutralButtonClass({ fullWidth: true })}
+              style={{ WebkitTapHighlightColor: "transparent" }}
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 export function WeekAheadChart({
   classes,

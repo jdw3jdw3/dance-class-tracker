@@ -2,7 +2,21 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
+import {
+  ClassSplitRecurringLabel,
+  classCardDeleteButtonClass,
+  classCardEditButtonClass,
+  classCardInsetSurfaceClass,
+  classCardMutedTextClass,
+  classCardRingClass,
+  classCardTaughtButtonClass,
+  classCardTaughtStatusClass,
+} from "@/components/class-split-card";
 import { GymBadge } from "@/components/gym-badge";
+import {
+  gymColourHex,
+  gymColourUsesLightForeground,
+} from "@/lib/gym-colours";
 import { scheduleConflictWarning } from "@/lib/schedule-conflict";
 
 const COLOUR_SWATCH: Record<string, string> = {
@@ -139,6 +153,10 @@ export function ClassEditDialog({
     });
   }
 
+  const gymColour = selectedGym?.colour ?? cls.gyms?.colour ?? "violet";
+  const lightFg = gymColourUsesLightForeground(gymColour);
+  const titleClass = lightFg ? "text-white" : "text-amber-950";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center"
@@ -151,13 +169,14 @@ export function ClassEditDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="class-edit-title"
-        className="max-h-[min(92dvh,40rem)] w-full max-w-md overflow-y-auto rounded-[22px] border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+        className={`max-h-[min(92dvh,40rem)] w-full max-w-md overflow-y-auto rounded-[22px] p-4 shadow-xl ring-1 ${classCardRingClass(gymColour)}`}
+        style={{ backgroundColor: gymColourHex(gymColour) }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2">
           <h2
             id="class-edit-title"
-            className="text-[17px] font-semibold text-zinc-900 dark:text-zinc-50"
+            className={`text-[17px] font-semibold ${titleClass}`}
           >
             Edit class
           </h2>
@@ -165,7 +184,7 @@ export function ClassEditDialog({
             type="button"
             disabled={saveBusy}
             onClick={onClose}
-            className="shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className={classCardEditButtonClass}
           >
             Cancel
           </button>
@@ -173,27 +192,28 @@ export function ClassEditDialog({
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <GymBadge
-            name={cls.gyms?.name ?? "Gym"}
-            colour={cls.gyms?.colour ?? "violet"}
+            name={selectedGym?.name ?? cls.gyms?.name ?? "Gym"}
+            colour={gymColour}
+            variant="onColour"
           />
+          {cls.recurring ? (
+            <ClassSplitRecurringLabel lightForeground={lightFg} />
+          ) : null}
           {cls.taught ? (
-            <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Taught
-            </span>
+            <span className={classCardTaughtStatusClass(gymColour)}>Taught</span>
           ) : null}
           {cls.taught && !cls.paid ? (
-            <span className="text-[12px] font-semibold text-amber-700 dark:text-amber-300">
+            <span className={classCardMutedTextClass(gymColour)}>
               Awaiting pay
             </span>
           ) : null}
           {cls.taught && cls.paid ? (
-            <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Paid
-            </span>
+            <span className={classCardTaughtStatusClass(gymColour)}>Paid</span>
           ) : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
+        <div className={`mt-4 ${classCardInsetSurfaceClass}`}>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div>
             <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
               Gym
@@ -301,7 +321,7 @@ export function ClassEditDialog({
           <button
             type="submit"
             disabled={saveBusy}
-            className="rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+            className={`${classCardTaughtButtonClass(false, { fullWidth: true })} text-[15px]`}
             style={{ WebkitTapHighlightColor: "transparent" }}
           >
             {saveBusy ? "Saving…" : "Save changes"}
@@ -314,11 +334,7 @@ export function ClassEditDialog({
             disabled={saveBusy}
             onClick={onToggleTaught}
             aria-pressed={cls.taught}
-            className={`w-full rounded-2xl py-3 text-[14px] font-semibold shadow-sm disabled:opacity-50 ${
-              cls.taught
-                ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
-                : "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
-            }`}
+            className={classCardTaughtButtonClass(cls.taught, { fullWidth: true })}
             style={{ WebkitTapHighlightColor: "transparent" }}
           >
             {cls.taught ? "Undo taught" : "Mark as taught"}
@@ -327,13 +343,16 @@ export function ClassEditDialog({
             type="button"
             disabled={saveBusy}
             onClick={onDelete}
-            className="w-full rounded-2xl border border-rose-200/90 py-3 text-[14px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+            className={classCardDeleteButtonClass({ fullWidth: true })}
             style={{ WebkitTapHighlightColor: "transparent" }}
           >
             Delete class
           </button>
         </div>
+
+        </div>
       </div>
     </div>
   );
 }
+
