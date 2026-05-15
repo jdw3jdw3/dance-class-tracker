@@ -4,27 +4,12 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { GymBadge } from "@/components/gym-badge";
+import { PaymentsChartsSection } from "@/components/payments-charts";
+import { WeekAheadChart } from "@/components/week-ahead-chart";
 import { createClient } from "@/lib/supabase";
+import { computePaymentAnalytics } from "@/lib/payments-analytics";
 import { getSupabasePublicEnvDiagnostics } from "@/lib/supabase/env";
-
-/** Stored on each gym row; maps to Tailwind badge + swatch styles. */
-const COLOUR_BADGE: Record<string, string> = {
-  violet:
-    "bg-violet-500/12 text-violet-700 ring-1 ring-violet-500/20 dark:bg-violet-400/15 dark:text-violet-200 dark:ring-violet-400/25",
-  emerald:
-    "bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/20 dark:bg-emerald-400/15 dark:text-emerald-200 dark:ring-emerald-400/25",
-  amber:
-    "bg-amber-500/15 text-amber-800 ring-1 ring-amber-500/25 dark:bg-amber-400/12 dark:text-amber-100 dark:ring-amber-400/20",
-  rose: "bg-rose-500/12 text-rose-700 ring-1 ring-rose-500/20 dark:bg-rose-400/15 dark:text-rose-200 dark:ring-rose-400/25",
-  sky: "bg-sky-500/12 text-sky-800 ring-1 ring-sky-500/20 dark:bg-sky-400/15 dark:text-sky-100 dark:ring-sky-400/25",
-  orange:
-    "bg-orange-500/12 text-orange-800 ring-1 ring-orange-500/20 dark:bg-orange-400/15 dark:text-orange-100 dark:ring-orange-400/25",
-  teal: "bg-teal-500/12 text-teal-800 ring-1 ring-teal-500/20 dark:bg-teal-400/15 dark:text-teal-100 dark:ring-teal-400/25",
-  indigo:
-    "bg-indigo-500/12 text-indigo-800 ring-1 ring-indigo-500/20 dark:bg-indigo-400/15 dark:text-indigo-100 dark:ring-indigo-400/25",
-  fuchsia:
-    "bg-fuchsia-500/12 text-fuchsia-800 ring-1 ring-fuchsia-500/20 dark:bg-fuchsia-400/15 dark:text-fuchsia-100 dark:ring-fuchsia-400/25",
-};
 
 const COLOUR_SWATCH: Record<string, string> = {
   violet: "bg-violet-500 shadow-inner shadow-violet-900/20",
@@ -36,19 +21,6 @@ const COLOUR_SWATCH: Record<string, string> = {
   teal: "bg-teal-500 shadow-inner shadow-teal-900/20",
   indigo: "bg-indigo-500 shadow-inner shadow-indigo-900/20",
   fuchsia: "bg-fuchsia-500 shadow-inner shadow-fuchsia-900/20",
-};
-
-/** Solid gym colour as badge background (Today tab). */
-const COLOUR_BADGE_FILLED: Record<string, string> = {
-  violet: "bg-violet-500 text-white ring-1 ring-violet-600/40",
-  emerald: "bg-emerald-500 text-white ring-1 ring-emerald-600/40",
-  amber: "bg-amber-400 text-amber-950 ring-1 ring-amber-500/50",
-  rose: "bg-rose-500 text-white ring-1 ring-rose-600/40",
-  sky: "bg-sky-500 text-white ring-1 ring-sky-600/40",
-  orange: "bg-orange-500 text-white ring-1 ring-orange-600/40",
-  teal: "bg-teal-500 text-white ring-1 ring-teal-600/40",
-  indigo: "bg-indigo-500 text-white ring-1 ring-indigo-600/40",
-  fuchsia: "bg-fuchsia-500 text-white ring-1 ring-fuchsia-600/40",
 };
 
 const GYM_COLOUR_OPTIONS = [
@@ -106,14 +78,6 @@ function classIntervalsTooClose(
   }
   const gap = aStart - bEnd;
   return gap >= 0 && gap < minGap;
-}
-
-function badgeClassForColour(colour: string) {
-  return COLOUR_BADGE[colour] ?? COLOUR_BADGE.violet;
-}
-
-function filledBadgeClassForColour(colour: string) {
-  return COLOUR_BADGE_FILLED[colour] ?? COLOUR_BADGE_FILLED.violet;
 }
 
 function swatchClassForColour(colour: string) {
@@ -258,27 +222,6 @@ function formatClassDateHeading(dateStr: string, todayStr: string) {
     return { heading: `Yesterday · ${weekday}`, sub, isPast: true };
   const isPast = dateStr < todayStr;
   return { heading: weekday, sub, isPast };
-}
-
-function GymBadge({
-  name,
-  colour,
-  filled = false,
-}: {
-  name: string;
-  colour: string;
-  /** Solid gym colour background (used on Today). */
-  filled?: boolean;
-}) {
-  return (
-    <span
-      className={`inline-flex max-w-full shrink-0 truncate rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${
-        filled ? filledBadgeClassForColour(colour) : badgeClassForColour(colour)
-      }`}
-    >
-      {name}
-    </span>
-  );
 }
 
 function IconToday({ className }: { className?: string }) {
@@ -426,7 +369,7 @@ function ClassRowCalendar({
           >
             {title}
           </p>
-          <GymBadge name={gymName} colour={gymColour} filled />
+          <GymBadge name={gymName} colour={gymColour} />
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           {recurring ? (
@@ -901,6 +844,11 @@ export default function Home() {
     [classes],
   );
 
+  const paymentAnalytics = useMemo(
+    () => computePaymentAnalytics(classes, { todayStr }),
+    [classes, todayStr],
+  );
+
   const unpaid = useMemo(() => {
     return classes
       .filter((c) => c.taught && !c.paid && c.gyms)
@@ -1004,7 +952,7 @@ export default function Home() {
       case "calendar":
         return "Past and upcoming classes — mark as taught";
       case "payments":
-        return "Taught classes awaiting payout";
+        return "Income, charts, and outstanding pay";
       case "settings":
         return "Add classes and manage gyms";
       default:
@@ -1338,7 +1286,7 @@ export default function Home() {
                                 {c.title}
                               </p>
                               {g ? (
-                                <GymBadge name={g.name} colour={g.colour} filled />
+                                <GymBadge name={g.name} colour={g.colour} />
                               ) : null}
                             </div>
                             {c.recurring ? (
@@ -1397,6 +1345,23 @@ export default function Home() {
                 {calendarUntaughtCount} not taught
               </span>
             </div>
+
+            <SectionCard
+              title="Week ahead"
+              subtitle="Today through the next 6 days — 6:30 AM to 10:00 PM"
+            >
+              <WeekAheadChart
+                classes={classes}
+                todayStr={todayStr}
+                saveBusy={saveBusy}
+                onMarkTaught={(id) => void markTaught(id)}
+                onAskDelete={(c) => {
+                  const row = classes.find((x) => x.id === c.id);
+                  if (row) setDeleteTarget(row);
+                }}
+              />
+            </SectionCard>
+
             {calendarGroups.length === 0 ? (
               <p className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-8 text-center text-[14px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-400">
                 No classes yet. Add one in{" "}
@@ -1456,6 +1421,8 @@ export default function Home() {
                   : `${unpaid.length} class${unpaid.length === 1 ? "" : "es"} at each gym’s pay rate`}
               </p>
             </div>
+
+            <PaymentsChartsSection analytics={paymentAnalytics} />
 
             <SectionCard
               title="Taught, not paid"
