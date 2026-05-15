@@ -38,6 +38,19 @@ const COLOUR_SWATCH: Record<string, string> = {
   fuchsia: "bg-fuchsia-500 shadow-inner shadow-fuchsia-900/20",
 };
 
+/** Solid gym colour as badge background (Today tab). */
+const COLOUR_BADGE_FILLED: Record<string, string> = {
+  violet: "bg-violet-500 text-white ring-1 ring-violet-600/40",
+  emerald: "bg-emerald-500 text-white ring-1 ring-emerald-600/40",
+  amber: "bg-amber-400 text-amber-950 ring-1 ring-amber-500/50",
+  rose: "bg-rose-500 text-white ring-1 ring-rose-600/40",
+  sky: "bg-sky-500 text-white ring-1 ring-sky-600/40",
+  orange: "bg-orange-500 text-white ring-1 ring-orange-600/40",
+  teal: "bg-teal-500 text-white ring-1 ring-teal-600/40",
+  indigo: "bg-indigo-500 text-white ring-1 ring-indigo-600/40",
+  fuchsia: "bg-fuchsia-500 text-white ring-1 ring-fuchsia-600/40",
+};
+
 const GYM_COLOUR_OPTIONS = [
   { value: "violet", label: "Violet" },
   { value: "emerald", label: "Emerald" },
@@ -97,6 +110,10 @@ function classIntervalsTooClose(
 
 function badgeClassForColour(colour: string) {
   return COLOUR_BADGE[colour] ?? COLOUR_BADGE.violet;
+}
+
+function filledBadgeClassForColour(colour: string) {
+  return COLOUR_BADGE_FILLED[colour] ?? COLOUR_BADGE_FILLED.violet;
 }
 
 function swatchClassForColour(colour: string) {
@@ -186,7 +203,7 @@ function collectRecurringSeriesIdsAtOrAfter(
     .map((c) => c.id);
 }
 
-type TabId = "today" | "calendar" | "payments" | "gyms";
+type TabId = "today" | "calendar" | "payments" | "settings";
 
 function formatGbp(cents: number) {
   return new Intl.NumberFormat("en-GB", {
@@ -223,20 +240,41 @@ function formatTimeRangeFromDb(start: string, end: string) {
 function formatClassDateHeading(dateStr: string, todayStr: string) {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
+  const weekday = dt.toLocaleDateString("en-GB", { weekday: "long" });
+  const sub = dt.toLocaleDateString("en-GB", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  if (dateStr === toLocalISODate(tomorrow)) return { heading: "Tomorrow", sub: dateStr };
-  if (dateStr === todayStr) return { heading: "Today", sub: dateStr };
-  return {
-    heading: dt.toLocaleDateString("en-US", { weekday: "long" }),
-    sub: dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-  };
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (dateStr === toLocalISODate(tomorrow))
+    return { heading: `Tomorrow · ${weekday}`, sub, isPast: false };
+  if (dateStr === todayStr)
+    return { heading: `Today · ${weekday}`, sub, isPast: false };
+  if (dateStr === toLocalISODate(yesterday))
+    return { heading: `Yesterday · ${weekday}`, sub, isPast: true };
+  const isPast = dateStr < todayStr;
+  return { heading: weekday, sub, isPast };
 }
 
-function GymBadge({ name, colour }: { name: string; colour: string }) {
+function GymBadge({
+  name,
+  colour,
+  filled = false,
+}: {
+  name: string;
+  colour: string;
+  /** Solid gym colour background (used on Today). */
+  filled?: boolean;
+}) {
   return (
     <span
-      className={`inline-flex max-w-full shrink-0 truncate rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${badgeClassForColour(colour)}`}
+      className={`inline-flex max-w-full shrink-0 truncate rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${
+        filled ? filledBadgeClassForColour(colour) : badgeClassForColour(colour)
+      }`}
     >
       {name}
     </span>
@@ -305,18 +343,18 @@ function IconPayments({ className }: { className?: string }) {
   );
 }
 
-function IconGyms({ className }: { className?: string }) {
+function IconSettings({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
-        d="M4 21V10l8-5 8 5v11"
+        d="M12 15a3 3 0 100-6 3 3 0 000 6z"
         stroke="currentColor"
         strokeWidth="1.75"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       <path
-        d="M9 21v-6h6v6"
+        d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"
         stroke="currentColor"
         strokeWidth="1.75"
         strokeLinecap="round"
@@ -362,43 +400,74 @@ function ClassRowCalendar({
   gymColour,
   timeRangeLabel,
   recurring,
+  taught,
+  onMarkTaught,
   onAskDelete,
+  saveBusy,
 }: {
   title: string;
   gymName: string;
   gymColour: string;
   timeRangeLabel: string;
   recurring: boolean;
-  onAskDelete?: () => void;
+  taught: boolean;
+  onMarkTaught: () => void;
+  onAskDelete: () => void;
+  saveBusy: boolean;
 }) {
   return (
-    <div className="flex gap-3 border-b border-zinc-100 py-3 last:border-b-0 dark:border-zinc-800/80">
+    <div className="flex flex-col gap-2.5 border-b border-zinc-100 py-3 last:border-b-0 dark:border-zinc-800/80 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-[15px] font-medium text-zinc-900 dark:text-zinc-100">
+          <p
+            className={`truncate text-[15px] font-medium text-zinc-900 dark:text-zinc-100 ${
+              taught ? "text-zinc-500 line-through dark:text-zinc-500" : ""
+            }`}
+          >
             {title}
           </p>
-          <GymBadge name={gymName} colour={gymColour} />
+          <GymBadge name={gymName} colour={gymColour} filled />
         </div>
-        {recurring ? (
-          <p className="text-[12px] font-medium text-blue-600 dark:text-blue-400">
-            Recurring
-          </p>
-        ) : null}
-        {onAskDelete ? (
-          <button
-            type="button"
-            onClick={onAskDelete}
-            className="self-start text-[13px] font-semibold text-rose-600 underline decoration-rose-600/30 underline-offset-2 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
-            style={{ WebkitTapHighlightColor: "transparent" }}
-          >
-            Delete
-          </button>
-        ) : null}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {recurring ? (
+            <span className="text-[12px] font-medium text-blue-600 dark:text-blue-400">
+              Recurring
+            </span>
+          ) : null}
+          {taught ? (
+            <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
+              Taught
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1.5 text-[14px] font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
+          {timeRangeLabel}
+        </p>
       </div>
-      <p className="max-w-[11rem] shrink-0 self-start text-right text-[15px] font-semibold tabular-nums leading-snug text-zinc-900 dark:text-zinc-50">
-        {timeRangeLabel}
-      </p>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-stretch">
+        <button
+          type="button"
+          onClick={onMarkTaught}
+          disabled={taught || saveBusy}
+          className={`rounded-xl px-3 py-2 text-[13px] font-semibold transition active:scale-[0.98] ${
+            taught
+              ? "cursor-default border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+              : "bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-400"
+          }`}
+          style={{ WebkitTapHighlightColor: "transparent" }}
+        >
+          {taught ? "Taught" : "Mark taught"}
+        </button>
+        <button
+          type="button"
+          onClick={onAskDelete}
+          disabled={saveBusy}
+          className="rounded-xl border border-rose-200/90 px-3 py-2 text-[13px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+          style={{ WebkitTapHighlightColor: "transparent" }}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }
@@ -810,24 +879,27 @@ export default function Home() {
   }, [classes, newClassDate, newClassTime, newClassEndTime]);
 
   const calendarGroups = useMemo(() => {
-    const upcoming = classes
-      .filter((c) => c.class_date >= todayStr)
-      .sort(
-        (a, b) =>
-          a.class_date.localeCompare(b.class_date) ||
-          a.start_time.localeCompare(b.start_time),
-      );
+    const sorted = [...classes].sort(
+      (a, b) =>
+        b.class_date.localeCompare(a.class_date) ||
+        a.start_time.localeCompare(b.start_time),
+    );
     const map = new Map<string, ClassWithGym[]>();
-    for (const c of upcoming) {
+    for (const c of sorted) {
       const list = map.get(c.class_date) ?? [];
       list.push(c);
       map.set(c.class_date, list);
     }
     return Array.from(map.entries()).map(([dateStr, items]) => {
-      const { heading, sub } = formatClassDateHeading(dateStr, todayStr);
-      return { dateStr, heading, subheading: sub, items };
+      const { heading, sub, isPast } = formatClassDateHeading(dateStr, todayStr);
+      return { dateStr, heading, subheading: sub, isPast, items };
     });
   }, [classes, todayStr]);
+
+  const calendarUntaughtCount = useMemo(
+    () => classes.filter((c) => !c.taught).length,
+    [classes],
+  );
 
   const unpaid = useMemo(() => {
     return classes
@@ -920,7 +992,7 @@ export default function Home() {
   }, [gyms]);
 
   useEffect(() => {
-    if (tab !== "gyms") {
+    if (tab !== "settings") {
       queueMicrotask(() => setEditingGymId(null));
     }
   }, [tab]);
@@ -930,11 +1002,11 @@ export default function Home() {
       case "today":
         return dateLine;
       case "calendar":
-        return "Upcoming classes by day";
+        return "Past and upcoming classes — mark as taught";
       case "payments":
         return "Taught classes awaiting payout";
-      case "gyms":
-        return "Your gyms and pay rates";
+      case "settings":
+        return "Add classes and manage gyms";
       default:
         return "";
     }
@@ -1244,9 +1316,9 @@ export default function Home() {
                   <button
                     type="button"
                     className="font-semibold text-blue-600 underline dark:text-blue-400"
-                    onClick={() => setTab("calendar")}
+                    onClick={() => setTab("settings")}
                   >
-                    Calendar
+                    Settings
                   </button>{" "}
                   tab.
                 </p>
@@ -1266,7 +1338,7 @@ export default function Home() {
                                 {c.title}
                               </p>
                               {g ? (
-                                <GymBadge name={g.name} colour={g.colour} />
+                                <GymBadge name={g.name} colour={g.colour} filled />
                               ) : null}
                             </div>
                             {c.recurring ? (
@@ -1313,6 +1385,146 @@ export default function Home() {
         ) : null}
 
         {tab === "calendar" ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between rounded-2xl border border-zinc-200/70 bg-white/70 px-4 py-3 text-[13px] text-zinc-600 shadow-sm backdrop-blur-sm dark:border-zinc-800/70 dark:bg-zinc-900/60 dark:text-zinc-300">
+              <span>
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  {classes.length}
+                </span>{" "}
+                scheduled
+              </span>
+              <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
+                {calendarUntaughtCount} not taught
+              </span>
+            </div>
+            {calendarGroups.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-8 text-center text-[14px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-400">
+                No classes yet. Add one in{" "}
+                <button
+                  type="button"
+                  className="font-semibold text-blue-600 underline dark:text-blue-400"
+                  onClick={() => setTab("settings")}
+                >
+                  Settings
+                </button>
+                .
+              </p>
+            ) : (
+              calendarGroups.map((group) => (
+                <SectionCard
+                  key={group.dateStr}
+                  title={group.heading}
+                  subtitle={group.subheading}
+                >
+                  <div>
+                    {group.items.map((c) => (
+                      <ClassRowCalendar
+                        key={c.id}
+                        title={c.title}
+                        gymName={c.gyms?.name ?? "Gym"}
+                        gymColour={c.gyms?.colour ?? "violet"}
+                        timeRangeLabel={formatTimeRangeFromDb(
+                          c.start_time,
+                          c.end_time,
+                        )}
+                        recurring={c.recurring}
+                        taught={c.taught}
+                        onMarkTaught={() => void markTaught(c.id)}
+                        onAskDelete={() => setDeleteTarget(c)}
+                        saveBusy={saveBusy}
+                      />
+                    ))}
+                  </div>
+                </SectionCard>
+              ))
+            )}
+          </div>
+        ) : null}
+
+        {tab === "payments" ? (
+          <div className="flex flex-col gap-4">
+            <div className="overflow-hidden rounded-[22px] border border-amber-500/25 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm dark:from-amber-950/40 dark:to-zinc-900 dark:border-amber-400/20">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800/90 dark:text-amber-200/90">
+                Total outstanding
+              </p>
+              <p className="mt-1 text-[32px] font-semibold tabular-nums tracking-tight text-amber-950 dark:text-amber-50">
+                {formatGbp(outstandingCents)}
+              </p>
+              <p className="mt-1 text-[13px] text-amber-900/70 dark:text-amber-200/70">
+                {unpaid.length === 0
+                  ? "You are all caught up."
+                  : `${unpaid.length} class${unpaid.length === 1 ? "" : "es"} at each gym’s pay rate`}
+              </p>
+            </div>
+
+            <SectionCard
+              title="Taught, not paid"
+              subtitle="Amount uses the rate stored on each class when it was added. Changing a gym’s pay only affects new classes."
+            >
+              {unpaid.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-10 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
+                  <p className="text-[15px] font-medium text-zinc-700 dark:text-zinc-200">
+                    Nothing outstanding
+                  </p>
+                  <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">
+                    Mark classes as taught, then paid, to clear this list.
+                  </p>
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {unpaid.map((p) => (
+                    <li
+                      key={p.id}
+                      className="rounded-2xl border border-zinc-200/70 bg-zinc-50/80 p-3.5 dark:border-zinc-700/60 dark:bg-zinc-800/40"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
+                            {p.classTitle}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <GymBadge name={p.gymName} colour={p.gymColour} />
+                            <span className="text-[12px] text-zinc-500 dark:text-zinc-400">
+                              Taught {p.taughtOn}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-[18px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                            {formatGbp(p.amountCents)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-stretch justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const row = classes.find((x) => x.id === p.id);
+                              if (row) setDeleteTarget(row);
+                            }}
+                            disabled={saveBusy}
+                            className="shrink-0 rounded-2xl border border-rose-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:bg-zinc-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                            style={{ WebkitTapHighlightColor: "transparent" }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void markPaid(p.id)}
+                            disabled={saveBusy}
+                            className="shrink-0 rounded-2xl border border-zinc-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700/80"
+                            style={{ WebkitTapHighlightColor: "transparent" }}
+                          >
+                            Mark as paid
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SectionCard>
+          </div>
+        ) : null}
+
+        {tab === "settings" ? (
           <div className="flex flex-col gap-4">
             <SectionCard
               title="Add a class"
@@ -1428,124 +1640,6 @@ export default function Home() {
               </form>
             </SectionCard>
 
-            {calendarGroups.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-8 text-center text-[14px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-400">
-                No upcoming classes. Add one above.
-              </p>
-            ) : (
-              calendarGroups.map((group) => (
-                <SectionCard
-                  key={group.dateStr}
-                  title={group.heading}
-                  subtitle={group.subheading}
-                >
-                  <div>
-                    {group.items.map((c) => (
-                      <ClassRowCalendar
-                        key={c.id}
-                        title={c.title}
-                        gymName={c.gyms?.name ?? "Gym"}
-                        gymColour={c.gyms?.colour ?? "violet"}
-                        timeRangeLabel={formatTimeRangeFromDb(
-                          c.start_time,
-                          c.end_time,
-                        )}
-                        recurring={c.recurring}
-                        onAskDelete={() => setDeleteTarget(c)}
-                      />
-                    ))}
-                  </div>
-                </SectionCard>
-              ))
-            )}
-          </div>
-        ) : null}
-
-        {tab === "payments" ? (
-          <div className="flex flex-col gap-4">
-            <div className="overflow-hidden rounded-[22px] border border-amber-500/25 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm dark:from-amber-950/40 dark:to-zinc-900 dark:border-amber-400/20">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800/90 dark:text-amber-200/90">
-                Total outstanding
-              </p>
-              <p className="mt-1 text-[32px] font-semibold tabular-nums tracking-tight text-amber-950 dark:text-amber-50">
-                {formatGbp(outstandingCents)}
-              </p>
-              <p className="mt-1 text-[13px] text-amber-900/70 dark:text-amber-200/70">
-                {unpaid.length === 0
-                  ? "You are all caught up."
-                  : `${unpaid.length} class${unpaid.length === 1 ? "" : "es"} at each gym’s pay rate`}
-              </p>
-            </div>
-
-            <SectionCard
-              title="Taught, not paid"
-              subtitle="Amount uses the rate stored on each class when it was added. Changing a gym’s pay only affects new classes."
-            >
-              {unpaid.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-10 text-center dark:border-zinc-700 dark:bg-zinc-800/30">
-                  <p className="text-[15px] font-medium text-zinc-700 dark:text-zinc-200">
-                    Nothing outstanding
-                  </p>
-                  <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">
-                    Mark classes as taught, then paid, to clear this list.
-                  </p>
-                </div>
-              ) : (
-                <ul className="flex flex-col gap-3">
-                  {unpaid.map((p) => (
-                    <li
-                      key={p.id}
-                      className="rounded-2xl border border-zinc-200/70 bg-zinc-50/80 p-3.5 dark:border-zinc-700/60 dark:bg-zinc-800/40"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
-                            {p.classTitle}
-                          </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <GymBadge name={p.gymName} colour={p.gymColour} />
-                            <span className="text-[12px] text-zinc-500 dark:text-zinc-400">
-                              Taught {p.taughtOn}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-[18px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                            {formatGbp(p.amountCents)}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-stretch justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const row = classes.find((x) => x.id === p.id);
-                              if (row) setDeleteTarget(row);
-                            }}
-                            disabled={saveBusy}
-                            className="shrink-0 rounded-2xl border border-rose-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:bg-zinc-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                            style={{ WebkitTapHighlightColor: "transparent" }}
-                          >
-                            Delete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void markPaid(p.id)}
-                            disabled={saveBusy}
-                            className="shrink-0 rounded-2xl border border-zinc-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700/80"
-                            style={{ WebkitTapHighlightColor: "transparent" }}
-                          >
-                            Mark as paid
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </SectionCard>
-          </div>
-        ) : null}
-
-        {tab === "gyms" ? (
-          <div className="flex flex-col gap-4">
             <SectionCard
               title="Add a gym"
               subtitle="Name, colour tag, and what you earn per class there."
@@ -1572,7 +1666,7 @@ export default function Home() {
                     value={newGymPay}
                     onChange={(e) => setNewGymPay(e.target.value)}
                     className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
-                    placeholder="e.g. 75 or 68.50"
+                    placeholder="e.g. 20 or 21.50"
                   />
                 </div>
                 <button
@@ -1839,7 +1933,7 @@ export default function Home() {
               { id: "today" as const, label: "Today", Icon: IconToday },
               { id: "calendar" as const, label: "Calendar", Icon: IconCalendar },
               { id: "payments" as const, label: "Payments", Icon: IconPayments },
-              { id: "gyms" as const, label: "Gyms", Icon: IconGyms },
+              { id: "settings" as const, label: "Settings", Icon: IconSettings },
             ] as const
           ).map(({ id, label, Icon }) => {
             const active = tab === id;
