@@ -228,17 +228,20 @@ function ClassDetailDialog({
         </dl>
 
         <div className="mt-5 flex flex-col gap-2">
-          {!cls.taught ? (
-            <button
-              type="button"
-              disabled={saveBusy}
-              onClick={onMarkTaught}
-              className="w-full rounded-2xl bg-blue-600 py-3 text-[14px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
-              style={{ WebkitTapHighlightColor: "transparent" }}
-            >
-              Mark as taught
-            </button>
-          ) : null}
+          <button
+            type="button"
+            disabled={saveBusy}
+            onClick={onMarkTaught}
+            aria-pressed={cls.taught}
+            className={`w-full rounded-2xl py-3 text-[14px] font-semibold shadow-sm disabled:opacity-50 ${
+              cls.taught
+                ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
+                : "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
+            }`}
+            style={{ WebkitTapHighlightColor: "transparent" }}
+          >
+            {cls.taught ? "Undo taught" : "Mark as taught"}
+          </button>
           <button
             type="button"
             disabled={saveBusy}
@@ -309,10 +312,7 @@ export function WeekAheadChart({
           cls={selected}
           saveBusy={saveBusy}
           onClose={() => setSelectedId(null)}
-          onMarkTaught={() => {
-            onMarkTaught?.(selected.id);
-            setSelectedId(null);
-          }}
+          onMarkTaught={() => onMarkTaught?.(selected.id)}
           onAskDelete={() => {
             setSelectedId(null);
             onAskDelete?.(selected);

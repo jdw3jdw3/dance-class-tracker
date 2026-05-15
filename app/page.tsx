@@ -391,15 +391,16 @@ function ClassRowCalendar({
         <button
           type="button"
           onClick={onMarkTaught}
-          disabled={taught || saveBusy}
-          className={`rounded-xl px-3 py-2 text-[13px] font-semibold transition active:scale-[0.98] ${
+          disabled={saveBusy}
+          aria-pressed={taught}
+          className={`rounded-xl px-3 py-2 text-[13px] font-semibold transition active:scale-[0.98] disabled:opacity-60 ${
             taught
-              ? "cursor-default border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-              : "bg-blue-600 text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-400"
+              ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
+              : "bg-blue-600 text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
           }`}
           style={{ WebkitTapHighlightColor: "transparent" }}
         >
-          {taught ? "Taught" : "Mark taught"}
+          {taught ? "Undo taught" : "Mark taught"}
         </button>
         <button
           type="button"
@@ -960,13 +961,15 @@ export default function Home() {
     }
   }, [tab, dateLine]);
 
-  async function markTaught(id: string) {
+  async function toggleTaught(id: string) {
     if (!supabase) return;
+    const row = classes.find((c) => c.id === id);
+    if (!row) return;
     setSaveBusy(true);
     setDataBanner(null);
     const { error } = await supabase
       .from("classes")
-      .update({ taught: true })
+      .update({ taught: !row.taught })
       .eq("id", id);
     if (error) setDataBanner(error.message);
     await loadData();
@@ -1310,16 +1313,17 @@ export default function Home() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => void markTaught(c.id)}
-                              disabled={c.taught || saveBusy}
-                              className={`rounded-2xl px-4 py-2.5 text-[14px] font-semibold transition active:scale-[0.98] sm:min-w-[9.5rem] ${
+                              onClick={() => void toggleTaught(c.id)}
+                              disabled={saveBusy}
+                              aria-pressed={c.taught}
+                              className={`rounded-2xl px-4 py-2.5 text-[14px] font-semibold transition active:scale-[0.98] sm:min-w-[9.5rem] disabled:opacity-60 ${
                                 c.taught
-                                  ? "cursor-default border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                                  : "bg-blue-600 text-white shadow-sm shadow-blue-600/25 hover:bg-blue-700 disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-400"
+                                  ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
+                                  : "bg-blue-600 text-white shadow-sm shadow-blue-600/25 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
                               }`}
                               style={{ WebkitTapHighlightColor: "transparent" }}
                             >
-                              {c.taught ? "Taught" : "Mark as taught"}
+                              {c.taught ? "Undo taught" : "Mark as taught"}
                             </button>
                           </div>
                         </div>
@@ -1354,7 +1358,7 @@ export default function Home() {
                 classes={classes}
                 todayStr={todayStr}
                 saveBusy={saveBusy}
-                onMarkTaught={(id) => void markTaught(id)}
+                onMarkTaught={(id) => void toggleTaught(id)}
                 onAskDelete={(c) => {
                   const row = classes.find((x) => x.id === c.id);
                   if (row) setDeleteTarget(row);
@@ -1394,7 +1398,7 @@ export default function Home() {
                         )}
                         recurring={c.recurring}
                         taught={c.taught}
-                        onMarkTaught={() => void markTaught(c.id)}
+                        onMarkTaught={() => void toggleTaught(c.id)}
                         onAskDelete={() => setDeleteTarget(c)}
                         saveBusy={saveBusy}
                       />
