@@ -14,3 +14,8 @@ export const GYM_COLOUR_HEX: Record<string, string> = {
 export function gymColourHex(colour: string): string {
   return GYM_COLOUR_HEX[colour] ?? GYM_COLOUR_HEX.violet;
 }
+
+/** Amber uses dark text on its fill; other gym colours use white. */
+export function gymColourUsesLightForeground(colour: string): boolean {
+  return colour !== "amber";
+}

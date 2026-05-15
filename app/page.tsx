@@ -5,10 +5,18 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
+  ClassSplitCard,
+  ClassSplitRecurringLabel,
+  classCardDeleteButtonClass,
+  classCardNeutralButtonClass,
+  classCardTaughtButtonClass,
+} from "@/components/class-split-card";
+import {
   ClassEditDialog,
   type ClassEditSaveValues,
 } from "@/components/class-edit-dialog";
 import { GymBadge } from "@/components/gym-badge";
+import { gymColourUsesLightForeground } from "@/lib/gym-colours";
 import { PaymentsChartsSection } from "@/components/payments-charts";
 import { WeekAheadChart } from "@/components/week-ahead-chart";
 import {
@@ -336,73 +344,58 @@ function ClassRowCalendar({
   onAskDelete: () => void;
   saveBusy: boolean;
 }) {
+  const lightFg = gymColourUsesLightForeground(gymColour);
+  const mutedOnColour = lightFg ? "text-white/75" : "text-amber-950/75";
+  const taughtOnColour = lightFg
+    ? "font-semibold text-emerald-100"
+    : "font-semibold text-emerald-900";
+
   return (
-    <div className="flex flex-col gap-2.5 border-b border-zinc-100 py-3 last:border-b-0 dark:border-zinc-800/80 sm:flex-row sm:items-start sm:justify-between">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="-mx-1 min-w-0 flex-1 rounded-xl px-1 py-0.5 text-left transition hover:bg-zinc-100/80 active:bg-zinc-100 dark:hover:bg-zinc-800/50 dark:active:bg-zinc-800/70"
-        style={{ WebkitTapHighlightColor: "transparent" }}
-      >
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <p
-            className={`truncate text-[15px] font-medium text-zinc-900 dark:text-zinc-100 ${
-              taught ? "text-zinc-500 line-through dark:text-zinc-500" : ""
-            }`}
-          >
-            {title}
-          </p>
-          <GymBadge name={gymName} colour={gymColour} />
-        </div>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+    <ClassSplitCard
+      title={title}
+      gymName={gymName}
+      gymColour={gymColour}
+      highlight={timeRangeLabel}
+      titleStrikethrough={taught}
+      onInfoClick={onOpen}
+      detail={
+        <>
           {recurring ? (
-            <span className="text-[12px] font-medium text-blue-600 dark:text-blue-400">
-              Recurring
-            </span>
+            <ClassSplitRecurringLabel lightForeground={lightFg} />
           ) : null}
           {taught ? (
-            <span className="text-[12px] font-semibold text-emerald-700 dark:text-emerald-300">
-              Taught
-            </span>
+            <span className={taughtOnColour}>Taught</span>
           ) : null}
-        </div>
-        <p className="mt-1.5 text-[14px] font-semibold tabular-nums text-zinc-700 dark:text-zinc-300">
-          {timeRangeLabel}
-        </p>
-        <p className="mt-0.5 text-[12px] font-medium text-blue-600 dark:text-blue-400">
-          Tap to edit
-        </p>
-      </div>
-      </button>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-stretch">
-        <button
-          type="button"
-          onClick={onMarkTaught}
-          disabled={saveBusy}
-          aria-pressed={taught}
-          className={`rounded-xl px-3 py-2 text-[13px] font-semibold transition active:scale-[0.98] disabled:opacity-60 ${
-            taught
-              ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
-              : "bg-blue-600 text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
-          }`}
-          style={{ WebkitTapHighlightColor: "transparent" }}
-        >
-          {taught ? "Undo taught" : "Mark taught"}
-        </button>
-        <button
-          type="button"
-          onClick={onAskDelete}
-          disabled={saveBusy}
-          className="rounded-xl border border-rose-200/90 px-3 py-2 text-[13px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:text-rose-300 dark:hover:bg-rose-950/40"
-          style={{ WebkitTapHighlightColor: "transparent" }}
-        >
-          Delete
-        </button>
-      </div>
-    </div>
+          <span className={mutedOnColour}>Tap to edit</span>
+        </>
+      }
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={onAskDelete}
+            disabled={saveBusy}
+            className={classCardDeleteButtonClass}
+            style={{ WebkitTapHighlightColor: "transparent" }}
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={onMarkTaught}
+            disabled={saveBusy}
+            aria-pressed={taught}
+            className={classCardTaughtButtonClass(taught)}
+            style={{ WebkitTapHighlightColor: "transparent" }}
+          >
+            {taught ? "Undo taught" : "Mark as taught"}
+          </button>
+        </>
+      }
+    />
   );
 }
+
 
 type AuthView = "login" | "signup";
 
@@ -1451,56 +1444,53 @@ export default function Home() {
                 <ul className="flex flex-col gap-3">
                   {todayClasses.map((c) => {
                     const g = c.gyms;
+                    const gymColour = g?.colour ?? "violet";
+                    const lightFg = gymColourUsesLightForeground(gymColour);
                     return (
-                      <li
-                        key={c.id}
-                        className="rounded-2xl border border-zinc-200/70 bg-zinc-50/80 p-3.5 ring-1 ring-zinc-100 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:ring-zinc-700/40"
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-[16px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                                {c.title}
-                              </p>
-                              {g ? (
-                                <GymBadge name={g.name} colour={g.colour} />
-                              ) : null}
-                            </div>
-                            {c.recurring ? (
-                              <p className="mt-1 text-[12px] font-medium text-blue-600 dark:text-blue-400">
-                                Recurring
-                              </p>
-                            ) : null}
-                            <p className="mt-2 text-[18px] font-semibold tabular-nums leading-snug text-zinc-900 dark:text-zinc-50">
-                              {formatTimeRangeFromDb(c.start_time, c.end_time)}
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-stretch justify-end gap-2 sm:shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTarget(c)}
-                              disabled={saveBusy}
-                              className="rounded-2xl border border-rose-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:bg-zinc-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                              style={{ WebkitTapHighlightColor: "transparent" }}
-                            >
-                              Delete
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void toggleTaught(c.id)}
-                              disabled={saveBusy}
-                              aria-pressed={c.taught}
-                              className={`rounded-2xl px-4 py-2.5 text-[14px] font-semibold transition active:scale-[0.98] sm:min-w-[9.5rem] disabled:opacity-60 ${
-                                c.taught
-                                  ? "border border-emerald-500/25 bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:text-emerald-200"
-                                  : "bg-blue-600 text-white shadow-sm shadow-blue-600/25 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
-                              }`}
-                              style={{ WebkitTapHighlightColor: "transparent" }}
-                            >
-                              {c.taught ? "Undo taught" : "Mark as taught"}
-                            </button>
-                          </div>
-                        </div>
+                      <li key={c.id}>
+                        <ClassSplitCard
+                          title={c.title}
+                          gymName={g?.name ?? "Gym"}
+                          gymColour={gymColour}
+                          highlight={formatTimeRangeFromDb(
+                            c.start_time,
+                            c.end_time,
+                          )}
+                          detail={
+                            c.recurring ? (
+                              <ClassSplitRecurringLabel
+                                lightForeground={lightFg}
+                              />
+                            ) : null
+                          }
+                          actions={
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteTarget(c)}
+                                disabled={saveBusy}
+                                className={classCardDeleteButtonClass}
+                                style={{
+                                  WebkitTapHighlightColor: "transparent",
+                                }}
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void toggleTaught(c.id)}
+                                disabled={saveBusy}
+                                aria-pressed={c.taught}
+                                className={classCardTaughtButtonClass(c.taught)}
+                                style={{
+                                  WebkitTapHighlightColor: "transparent",
+                                }}
+                              >
+                                {c.taught ? "Undo taught" : "Mark as taught"}
+                              </button>
+                            </>
+                          }
+                        />
                       </li>
                     );
                   })}
@@ -1563,7 +1553,7 @@ export default function Home() {
                   title={group.heading}
                   subtitle={group.subheading}
                 >
-                  <div>
+                  <ul className="flex flex-col gap-3">
                     {group.items.map((c) => (
                       <ClassRowCalendar
                         key={c.id}
@@ -1582,7 +1572,7 @@ export default function Home() {
                         saveBusy={saveBusy}
                       />
                     ))}
-                  </div>
+                  </ul>
                 </SectionCard>
               ))
             )}
@@ -1622,52 +1612,56 @@ export default function Home() {
                 </div>
               ) : (
                 <ul className="flex flex-col gap-3">
-                  {unpaid.map((p) => (
-                    <li
-                      key={p.id}
-                      className="rounded-2xl border border-zinc-200/70 bg-zinc-50/80 p-3.5 dark:border-zinc-700/60 dark:bg-zinc-800/40"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
-                            {p.classTitle}
-                          </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <GymBadge name={p.gymName} colour={p.gymColour} />
-                            <span className="text-[12px] text-zinc-500 dark:text-zinc-400">
+                  {unpaid.map((p) => {
+                    const lightFg = gymColourUsesLightForeground(p.gymColour);
+                    const taughtLabelClass = lightFg
+                      ? "text-white/85"
+                      : "text-amber-950/85";
+                    return (
+                      <li key={p.id}>
+                        <ClassSplitCard
+                          title={p.classTitle}
+                          gymName={p.gymName}
+                          gymColour={p.gymColour}
+                          highlight={formatGbp(p.amountCents)}
+                          detail={
+                            <span className={taughtLabelClass}>
                               Taught {p.taughtOn}
                             </span>
-                          </div>
-                          <p className="mt-2 text-[18px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                            {formatGbp(p.amountCents)}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-stretch justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const row = classes.find((x) => x.id === p.id);
-                              if (row) setDeleteTarget(row);
-                            }}
-                            disabled={saveBusy}
-                            className="shrink-0 rounded-2xl border border-rose-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-rose-700 shadow-sm hover:bg-rose-50 disabled:opacity-50 dark:border-rose-900/50 dark:bg-zinc-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                            style={{ WebkitTapHighlightColor: "transparent" }}
-                          >
-                            Delete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void markPaid(p.id)}
-                            disabled={saveBusy}
-                            className="shrink-0 rounded-2xl border border-zinc-200/90 bg-white px-4 py-2.5 text-[14px] font-semibold text-zinc-900 shadow-sm hover:bg-zinc-50 active:scale-[0.98] disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700/80"
-                            style={{ WebkitTapHighlightColor: "transparent" }}
-                          >
-                            Mark as paid
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
+                          }
+                          actions={
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const row = classes.find((x) => x.id === p.id);
+                                  if (row) setDeleteTarget(row);
+                                }}
+                                disabled={saveBusy}
+                                className={classCardDeleteButtonClass}
+                                style={{
+                                  WebkitTapHighlightColor: "transparent",
+                                }}
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void markPaid(p.id)}
+                                disabled={saveBusy}
+                                className={classCardNeutralButtonClass}
+                                style={{
+                                  WebkitTapHighlightColor: "transparent",
+                                }}
+                              >
+                                Mark as paid
+                              </button>
+                            </>
+                          }
+                        />
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </SectionCard>
@@ -1819,6 +1813,177 @@ export default function Home() {
                 </button>
               </form>
             </SectionCard>
+
+            <SectionCard
+              title="Add a gym"
+              subtitle="Name, colour tag, and what you earn per class there."
+            >
+              <form onSubmit={handleCreateGym} className="flex flex-col gap-3">
+                <div>
+                  <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                    Gym name
+                  </label>
+                  <input
+                    value={newGymName}
+                    onChange={(e) => setNewGymName(e.target.value)}
+                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                    placeholder="e.g. Rhythm Studio"
+                  />
+                </div>
+                <GymColourPicker value={newGymColour} onChange={setNewGymColour} />
+                <div>
+                  <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                    Pay per class (£)
+                  </label>
+                  <input
+                    inputMode="decimal"
+                    value={newGymPay}
+                    onChange={(e) => setNewGymPay(e.target.value)}
+                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                    placeholder="e.g. 20 or 21.50"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={saveBusy}
+                  className="rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                >
+                  {saveBusy ? "Saving…" : "Save gym"}
+                </button>
+              </form>
+            </SectionCard>
+
+            {gyms.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-8 text-center text-[14px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-400">
+                No gyms yet. Add your first gym above.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {gyms.map((g) => {
+                  const editing = editingGymId === g.id;
+                  const colourOk = GYM_COLOUR_OPTIONS.some((o) => o.value === g.colour);
+                  return (
+                    <section
+                      key={g.id}
+                      className="rounded-[22px] border border-zinc-200/80 bg-white/90 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/80 dark:shadow-[0_1px_2px_rgba(0,0,0,0.2),0_8px_28px_-10px_rgba(0,0,0,0.45)]"
+                    >
+                      {editing ? (
+                        <form
+                          onSubmit={(e) => void handleUpdateGym(e, g.id)}
+                          className="flex flex-col gap-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
+                              Edit gym
+                            </p>
+                            <button
+                              type="button"
+                              disabled={saveBusy}
+                              onClick={() => setEditingGymId(null)}
+                              className="shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                              Gym name
+                            </label>
+                            <input
+                              value={editGymName}
+                              onChange={(e) => setEditGymName(e.target.value)}
+                              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                            />
+                          </div>
+                          <GymColourPicker
+                            value={editGymColour}
+                            onChange={setEditGymColour}
+                          />
+                          <div>
+                            <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
+                              Pay per class (£)
+                            </label>
+                            <input
+                              inputMode="decimal"
+                              value={editGymPay}
+                              onChange={(e) => setEditGymPay(e.target.value)}
+                              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={saveBusy}
+                            className="rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
+                          >
+                            {saveBusy ? "Saving…" : "Save changes"}
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex gap-3">
+                            <div
+                              className={`mt-0.5 h-11 w-11 shrink-0 rounded-2xl ${swatchClassForColour(g.colour)}`}
+                              aria-hidden
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <h2 className="text-[17px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                                    {g.name}
+                                  </h2>
+                                  <GymBadge name={g.name} colour={g.colour} />
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={saveBusy}
+                                  onClick={() => {
+                                    setEditingGymId(g.id);
+                                    setEditGymName(g.name);
+                                    setEditGymColour(
+                                      colourOk
+                                        ? g.colour
+                                        : GYM_COLOUR_OPTIONS[0].value,
+                                    );
+                                    setEditGymPay(
+                                      String(g.pay_per_class_cents / 100),
+                                    );
+                                    setDataBanner(null);
+                                  }}
+                                  className="shrink-0 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700/80"
+                                  style={{
+                                    WebkitTapHighlightColor: "transparent",
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                              <div className="mt-4 grid grid-cols-2 gap-3">
+                                <div className="rounded-2xl bg-zinc-50/90 p-3 ring-1 ring-zinc-200/60 dark:bg-zinc-800/50 dark:ring-zinc-700/50">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                                    Pay / class
+                                  </p>
+                                  <p className="mt-1 text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
+                                    {formatGbp(g.pay_per_class_cents)}
+                                  </p>
+                                </div>
+                                <div className="rounded-2xl bg-zinc-50/90 p-3 ring-1 ring-zinc-200/60 dark:bg-zinc-800/50 dark:ring-zinc-700/50">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                                    This month
+                                  </p>
+                                  <p className="mt-1 text-[15px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                                    {classesThisMonthForGym(g.id)} classes
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
 
             <SectionCard
               title="Upcoming classes"
@@ -2066,177 +2231,6 @@ export default function Home() {
                 </ul>
               )}
             </SectionCard>
-
-            <SectionCard
-              title="Add a gym"
-              subtitle="Name, colour tag, and what you earn per class there."
-            >
-              <form onSubmit={handleCreateGym} className="flex flex-col gap-3">
-                <div>
-                  <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
-                    Gym name
-                  </label>
-                  <input
-                    value={newGymName}
-                    onChange={(e) => setNewGymName(e.target.value)}
-                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
-                    placeholder="e.g. Rhythm Studio"
-                  />
-                </div>
-                <GymColourPicker value={newGymColour} onChange={setNewGymColour} />
-                <div>
-                  <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
-                    Pay per class (£)
-                  </label>
-                  <input
-                    inputMode="decimal"
-                    value={newGymPay}
-                    onChange={(e) => setNewGymPay(e.target.value)}
-                    className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
-                    placeholder="e.g. 20 or 21.50"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={saveBusy}
-                  className="rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
-                >
-                  {saveBusy ? "Saving…" : "Save gym"}
-                </button>
-              </form>
-            </SectionCard>
-
-            {gyms.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-zinc-200/90 bg-zinc-50/50 px-4 py-8 text-center text-[14px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/30 dark:text-zinc-400">
-                No gyms yet. Add your first gym above.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {gyms.map((g) => {
-                  const editing = editingGymId === g.id;
-                  const colourOk = GYM_COLOUR_OPTIONS.some((o) => o.value === g.colour);
-                  return (
-                    <section
-                      key={g.id}
-                      className="rounded-[22px] border border-zinc-200/80 bg-white/90 p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-8px_rgba(0,0,0,0.12)] backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-900/80 dark:shadow-[0_1px_2px_rgba(0,0,0,0.2),0_8px_28px_-10px_rgba(0,0,0,0.45)]"
-                    >
-                      {editing ? (
-                        <form
-                          onSubmit={(e) => void handleUpdateGym(e, g.id)}
-                          className="flex flex-col gap-3"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
-                              Edit gym
-                            </p>
-                            <button
-                              type="button"
-                              disabled={saveBusy}
-                              onClick={() => setEditingGymId(null)}
-                              className="shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
-                              Gym name
-                            </label>
-                            <input
-                              value={editGymName}
-                              onChange={(e) => setEditGymName(e.target.value)}
-                              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
-                            />
-                          </div>
-                          <GymColourPicker
-                            value={editGymColour}
-                            onChange={setEditGymColour}
-                          />
-                          <div>
-                            <label className="mb-1 block text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
-                              Pay per class (£)
-                            </label>
-                            <input
-                              inputMode="decimal"
-                              value={editGymPay}
-                              onChange={(e) => setEditGymPay(e.target.value)}
-                              className="w-full rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-[16px] text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-50"
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            disabled={saveBusy}
-                            className="rounded-2xl bg-blue-600 py-3 text-[15px] font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-400"
-                          >
-                            {saveBusy ? "Saving…" : "Save changes"}
-                          </button>
-                        </form>
-                      ) : (
-                        <>
-                          <div className="flex gap-3">
-                            <div
-                              className={`mt-0.5 h-11 w-11 shrink-0 rounded-2xl ${swatchClassForColour(g.colour)}`}
-                              aria-hidden
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                  <h2 className="text-[17px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                                    {g.name}
-                                  </h2>
-                                  <GymBadge name={g.name} colour={g.colour} />
-                                </div>
-                                <button
-                                  type="button"
-                                  disabled={saveBusy}
-                                  onClick={() => {
-                                    setEditingGymId(g.id);
-                                    setEditGymName(g.name);
-                                    setEditGymColour(
-                                      colourOk
-                                        ? g.colour
-                                        : GYM_COLOUR_OPTIONS[0].value,
-                                    );
-                                    setEditGymPay(
-                                      String(g.pay_per_class_cents / 100),
-                                    );
-                                    setDataBanner(null);
-                                  }}
-                                  className="shrink-0 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700/80"
-                                  style={{
-                                    WebkitTapHighlightColor: "transparent",
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                              <div className="mt-4 grid grid-cols-2 gap-3">
-                                <div className="rounded-2xl bg-zinc-50/90 p-3 ring-1 ring-zinc-200/60 dark:bg-zinc-800/50 dark:ring-zinc-700/50">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                                    Pay / class
-                                  </p>
-                                  <p className="mt-1 text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
-                                    {formatGbp(g.pay_per_class_cents)}
-                                  </p>
-                                </div>
-                                <div className="rounded-2xl bg-zinc-50/90 p-3 ring-1 ring-zinc-200/60 dark:bg-zinc-800/50 dark:ring-zinc-700/50">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                                    This month
-                                  </p>
-                                  <p className="mt-1 text-[15px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                                    {classesThisMonthForGym(g.id)} classes
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </section>
-                  );
-                })}
-              </div>
-            )}
           </div>
         ) : null}
       </div>
